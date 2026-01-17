@@ -40,17 +40,26 @@
       </div>
     </div>
 
-    <!-- 错误提示 -->
-    <div v-if="error" class="error-toast">
+    <!-- 错误提示（配置错误显示特殊样式） -->
+    <div v-if="error" class="error-toast" :class="{ 'config-error': isConfigError }">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-      {{ error }}
+      <div class="error-content">
+        <span class="error-text">{{ error }}</span>
+        <RouterLink v-if="isConfigError" to="/settings" class="error-link">
+          前往设置
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </RouterLink>
+      </div>
+      <button class="error-close" @click="error = ''">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed } from 'vue'
+import { useRouter, RouterLink } from 'vue-router'
 import { useGeneratorStore } from '../stores/generator'
 import { generateOutline, createHistory } from '../api'
 
@@ -65,10 +74,16 @@ const store = useGeneratorStore()
 const topic = ref('')
 const loading = ref(false)
 const error = ref('')
+const errorType = ref('')
 const composerRef = ref<InstanceType<typeof ComposerInput> | null>(null)
 
 // 上传的图片文件
 const uploadedImageFiles = ref<File[]>([])
+
+// 是否是配置相关的错误（需要去设置页面）
+const isConfigError = computed(() => {
+  return ['missing_api_key', 'no_provider', 'auth_failed', 'model_error'].includes(errorType.value)
+})
 
 /**
  * 处理图片变化
@@ -85,6 +100,7 @@ async function handleGenerate() {
 
   loading.value = true
   error.value = ''
+  errorType.value = ''
 
   try {
     const imageFiles = uploadedImageFiles.value
@@ -138,9 +154,11 @@ async function handleGenerate() {
       router.push('/outline')
     } else {
       error.value = result.error || '生成大纲失败'
+      errorType.value = result.error_type || ''
     }
   } catch (err: any) {
     error.value = err.message || '网络错误，请重试'
+    errorType.value = ''
   } finally {
     loading.value = false
   }
@@ -260,14 +278,75 @@ async function handleGenerate() {
   transform: translateX(-50%);
   background: #FF4D4F;
   color: white;
-  padding: 12px 24px;
-  border-radius: 50px;
+  padding: 14px 20px;
+  border-radius: 16px;
   box-shadow: 0 8px 24px rgba(255, 77, 79, 0.3);
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-start;
+  gap: 12px;
   z-index: 1000;
   animation: slideUp 0.3s ease-out;
+  max-width: 500px;
+}
+
+.error-toast.config-error {
+  background: linear-gradient(135deg, #FF6B6B 0%, #FF4D4F 100%);
+}
+
+.error-toast > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.error-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.error-text {
+  white-space: pre-line;
+  line-height: 1.5;
+  font-size: 14px;
+}
+
+.error-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: white;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.2s;
+  width: fit-content;
+}
+
+.error-link:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.error-close {
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s;
+  color: white;
+}
+
+.error-close:hover {
+  background: rgba(255, 255, 255, 0.3);
 }
 
 /* Animations */

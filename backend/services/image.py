@@ -13,6 +13,17 @@ from backend.utils.image_compressor import compress_image
 logger = logging.getLogger(__name__)
 
 
+def _get_active_brand_style() -> Optional[str]:
+    """获取当前激活品牌的风格Prompt"""
+    try:
+        from backend.services.brand import get_brand_service
+        brand_service = get_brand_service()
+        return brand_service.get_active_style_prompt()
+    except Exception as e:
+        logger.warning(f"获取品牌风格失败: {e}")
+        return None
+
+
 class ImageService:
     """图片生成服务类"""
 
@@ -121,7 +132,8 @@ class ImageService:
         retry_count: int = 0,
         full_outline: str = "",
         user_images: Optional[List[bytes]] = None,
-        user_topic: str = ""
+        user_topic: str = "",
+        brand_style: Optional[str] = None
     ) -> Tuple[int, bool, Optional[str], Optional[str]]:
         """
         生成单张图片（带自动重试）
@@ -134,6 +146,7 @@ class ImageService:
             full_outline: 完整的大纲文本
             user_images: 用户上传的参考图片列表
             user_topic: 用户原始输入
+            brand_style: 品牌风格Prompt
 
         Returns:
             (index, success, filename, error_message)
@@ -161,6 +174,11 @@ class ImageService:
                     full_outline=full_outline,
                     user_topic=user_topic if user_topic else "未提供"
                 )
+
+            # 注入品牌风格
+            if brand_style:
+                prompt = f"{brand_style}\n\n{prompt}"
+                logger.debug(f"  已注入品牌风格 ({len(brand_style)} 字符)")
 
             # 调用生成器生成图片
             if self.provider_config.get('type') == 'google_genai':
@@ -252,6 +270,11 @@ class ImageService:
         if user_images:
             compressed_user_images = [compress_image(img, max_size_kb=200) for img in user_images]
 
+        # 获取当前激活品牌的风格Prompt
+        brand_style = _get_active_brand_style()
+        if brand_style:
+            logger.info(f"使用品牌风格生成图片 ({len(brand_style)} 字符)")
+
         # 初始化任务状态
         self._task_states[task_id] = {
             "pages": pages,
@@ -260,7 +283,8 @@ class ImageService:
             "cover_image": None,
             "full_outline": full_outline,
             "user_images": compressed_user_images,
-            "user_topic": user_topic
+            "user_topic": user_topic,
+            "brand_style": brand_style
         }
 
         # ==================== 第一阶段：生成封面 ====================
@@ -295,7 +319,7 @@ class ImageService:
             # 生成封面（使用用户上传的图片作为参考）
             index, success, filename, error = self._generate_single_image(
                 cover_page, task_id, reference_image=None, full_outline=full_outline,
-                user_images=compressed_user_images, user_topic=user_topic
+                user_images=compressed_user_images, user_topic=user_topic, brand_style=brand_style
             )
 
             if success:
@@ -365,7 +389,8 @@ class ImageService:
                             0,  # retry_count
                             full_outline,  # 传入完整大纲
                             compressed_user_images,  # 用户上传的参考图片（已压缩）
-                            user_topic  # 用户原始输入
+                            user_topic,  # 用户原始输入
+                            brand_style  # 品牌风格
                         ): page
                         for page in other_pages
                     }
@@ -466,7 +491,8 @@ class ImageService:
                         0,
                         full_outline,
                         compressed_user_images,
-                        user_topic
+                        user_topic,
+                        brand_style
                     )
 
                     if success:
@@ -537,6 +563,7 @@ class ImageService:
 
         reference_image = None
         user_images = None
+        brand_style = None
 
         # 首先尝试从任务状态中获取上下文
         if task_id in self._task_states:
@@ -549,6 +576,11 @@ class ImageService:
             if not user_topic:
                 user_topic = task_state.get("user_topic", "")
             user_images = task_state.get("user_images")
+            brand_style = task_state.get("brand_style")
+
+        # 如果任务状态中没有品牌风格，尝试重新获取
+        if brand_style is None:
+            brand_style = _get_active_brand_style()
 
         # 如果任务状态中没有封面图，尝试从文件系统加载
         if use_reference and reference_image is None:
@@ -566,7 +598,8 @@ class ImageService:
             0,
             full_outline,
             user_images,
-            user_topic
+            user_topic,
+            brand_style
         )
 
         if success:
@@ -603,10 +636,24 @@ class ImageService:
         Yields:
             进度事件
         """
-        # 获取参考图
+        # 获取参考图和品牌风格
         reference_image = None
+        brand_style = None
+        user_images = None
+        user_topic = ""
+        full_outline = ""
+
         if task_id in self._task_states:
-            reference_image = self._task_states[task_id].get("cover_image")
+            task_state = self._task_states[task_id]
+            reference_image = task_state.get("cover_image")
+            brand_style = task_state.get("brand_style")
+            user_images = task_state.get("user_images")
+            user_topic = task_state.get("user_topic", "")
+            full_outline = task_state.get("full_outline", "")
+
+        # 如果任务状态中没有品牌风格，尝试重新获取
+        if brand_style is None:
+            brand_style = _get_active_brand_style()
 
         total = len(pages)
         success_count = 0
@@ -620,12 +667,6 @@ class ImageService:
             }
         }
 
-        # 并发重试
-        # 从任务状态中获取完整大纲
-        full_outline = ""
-        if task_id in self._task_states:
-            full_outline = self._task_states[task_id].get("full_outline", "")
-
         with ThreadPoolExecutor(max_workers=self.MAX_CONCURRENT) as executor:
             future_to_page = {
                 executor.submit(
@@ -634,7 +675,10 @@ class ImageService:
                     task_id,
                     reference_image,
                     0,  # retry_count
-                    full_outline  # 传入完整大纲
+                    full_outline,  # 传入完整大纲
+                    user_images,
+                    user_topic,
+                    brand_style  # 传入品牌风格
                 ): page
                 for page in pages
             }

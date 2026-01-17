@@ -5,6 +5,7 @@ import GenerateView from '../views/GenerateView.vue'
 import ResultView from '../views/ResultView.vue'
 import HistoryView from '../views/HistoryView.vue'
 import SettingsView from '../views/SettingsView.vue'
+import BrandStyleView from '../views/BrandStyleView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -38,6 +39,11 @@ const router = createRouter({
       path: '/history/:id',
       name: 'history-detail',
       component: HistoryView
+    },
+    {
+      path: '/brand-style',
+      name: 'brand-style',
+      component: BrandStyleView
     },
     {
       path: '/settings',

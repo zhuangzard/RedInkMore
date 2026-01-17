@@ -176,57 +176,58 @@ class OutlineService:
             logger.error(f"大纲生成失败: {error_msg}")
 
             # 根据错误类型提供更详细的错误信息
-            if "api_key" in error_msg.lower() or "unauthorized" in error_msg.lower() or "401" in error_msg:
+            error_type = "unknown"
+
+            if "未配置 API Key" in error_msg or "api_key" in error_msg.lower():
+                error_type = "missing_api_key"
                 detailed_error = (
-                    f"API 认证失败。\n"
-                    f"错误详情: {error_msg}\n"
-                    "可能原因：\n"
-                    "1. API Key 无效或已过期\n"
-                    "2. API Key 没有访问该模型的权限\n"
-                    "解决方案：在系统设置页面检查并更新 API Key"
+                    "请先配置 API Key\n\n"
+                    "请前往「系统设置」页面添加文本生成服务商配置，"
+                    "或手动编辑 text_providers.yaml 文件。"
+                )
+            elif "未找到任何文本生成服务商配置" in error_msg:
+                error_type = "no_provider"
+                detailed_error = (
+                    "未配置文本生成服务商\n\n"
+                    "请前往「系统设置」页面添加文本生成服务商，"
+                    "支持 OpenAI、Google Gemini 等多种服务商。"
+                )
+            elif "unauthorized" in error_msg.lower() or "401" in error_msg:
+                error_type = "auth_failed"
+                detailed_error = (
+                    "API 认证失败\n\n"
+                    "API Key 无效或已过期，请在「系统设置」中检查并更新。"
                 )
             elif "model" in error_msg.lower() or "404" in error_msg:
+                error_type = "model_error"
                 detailed_error = (
-                    f"模型访问失败。\n"
-                    f"错误详情: {error_msg}\n"
-                    "可能原因：\n"
-                    "1. 模型名称不正确\n"
-                    "2. 没有访问该模型的权限\n"
-                    "解决方案：在系统设置页面检查模型名称配置"
+                    "模型访问失败\n\n"
+                    "模型名称可能不正确，请在「系统设置」中检查配置。"
                 )
             elif "timeout" in error_msg.lower() or "连接" in error_msg:
+                error_type = "network_error"
                 detailed_error = (
-                    f"网络连接失败。\n"
-                    f"错误详情: {error_msg}\n"
-                    "可能原因：\n"
-                    "1. 网络连接不稳定\n"
-                    "2. API 服务暂时不可用\n"
-                    "3. Base URL 配置错误\n"
-                    "解决方案：检查网络连接，稍后重试"
+                    "网络连接失败\n\n"
+                    "请检查网络连接，或稍后重试。"
                 )
             elif "rate" in error_msg.lower() or "429" in error_msg or "quota" in error_msg.lower():
+                error_type = "rate_limit"
                 detailed_error = (
-                    f"API 配额限制。\n"
-                    f"错误详情: {error_msg}\n"
-                    "可能原因：\n"
-                    "1. API 调用次数超限\n"
-                    "2. 账户配额用尽\n"
-                    "解决方案：等待配额重置，或升级 API 套餐"
+                    "API 配额限制\n\n"
+                    "API 调用次数超限，请等待配额重置或升级套餐。"
                 )
             else:
+                error_type = "unknown"
                 detailed_error = (
-                    f"大纲生成失败。\n"
-                    f"错误详情: {error_msg}\n"
-                    "可能原因：\n"
-                    "1. Text API 配置错误或密钥无效\n"
-                    "2. 网络连接问题\n"
-                    "3. 模型无法访问或不存在\n"
-                    "建议：检查配置文件 text_providers.yaml"
+                    "大纲生成失败\n\n"
+                    f"{error_msg}\n\n"
+                    "请检查「系统设置」中的服务商配置。"
                 )
 
             return {
                 "success": False,
-                "error": detailed_error
+                "error": detailed_error,
+                "error_type": error_type
             }
 
 

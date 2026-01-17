@@ -13,6 +13,7 @@ export interface OutlineResponse {
   outline?: string
   pages?: Page[]
   error?: string
+  error_type?: string
 }
 
 export interface ProgressEvent {
@@ -34,32 +35,55 @@ export interface FinishEvent {
 export async function generateOutline(
   topic: string,
   images?: File[]
-): Promise<OutlineResponse & { has_images?: boolean }> {
-  // 如果有图片，使用 FormData
-  if (images && images.length > 0) {
-    const formData = new FormData()
-    formData.append('topic', topic)
-    images.forEach((file) => {
-      formData.append('images', file)
-    })
+): Promise<OutlineResponse & { has_images?: boolean; error_type?: string }> {
+  try {
+    // 如果有图片，使用 FormData
+    if (images && images.length > 0) {
+      const formData = new FormData()
+      formData.append('topic', topic)
+      images.forEach((file) => {
+        formData.append('images', file)
+      })
 
-    const response = await axios.post<OutlineResponse & { has_images?: boolean }>(
-      `${API_BASE_URL}/outline`,
-      formData,
-      {
-        headers: {
-          'Content-Type': 'multipart/form-data'
+      const response = await axios.post<OutlineResponse & { has_images?: boolean }>(
+        `${API_BASE_URL}/outline`,
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data'
+          },
+          timeout: 120000 // 2分钟超时
         }
-      }
-    )
-    return response.data
-  }
+      )
+      return response.data
+    }
 
-  // 无图片，使用 JSON
-  const response = await axios.post<OutlineResponse>(`${API_BASE_URL}/outline`, {
-    topic
-  })
-  return response.data
+    // 无图片，使用 JSON
+    const response = await axios.post<OutlineResponse>(`${API_BASE_URL}/outline`, {
+      topic
+    }, {
+      timeout: 120000 // 2分钟超时
+    })
+    return response.data
+  } catch (error: any) {
+    // 处理 axios 错误，提取后端返回的错误信息
+    if (axios.isAxiosError(error)) {
+      if (error.code === 'ECONNABORTED') {
+        return { success: false, error: '请求超时，请稍后重试' }
+      }
+      if (!error.response) {
+        return { success: false, error: '网络连接失败，请检查网络设置' }
+      }
+      // 从响应中提取错误信息
+      const errorData = error.response.data
+      return {
+        success: false,
+        error: errorData?.error || `请求失败 (${error.response.status})`,
+        error_type: errorData?.error_type
+      }
+    }
+    return { success: false, error: '未知错误，请稍后重试' }
+  }
 }
 
 // 获取图片 URL（新格式：task_id/filename）
