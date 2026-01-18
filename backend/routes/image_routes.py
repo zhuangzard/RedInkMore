@@ -281,6 +281,7 @@ def create_image_blueprint():
         - use_reference: 是否使用参考图（默认 true）
         - full_outline: 完整大纲文本（用于上下文）
         - user_topic: 用户原始输入主题
+        - custom_reference_image: 自定义参考图的 base64 编码（可选）
 
         返回：
         - success: 是否成功
@@ -293,10 +294,12 @@ def create_image_blueprint():
             use_reference = data.get('use_reference', True)
             full_outline = data.get('full_outline', '')
             user_topic = data.get('user_topic', '')
+            custom_ref_base64 = data.get('custom_reference_image')
 
             log_request('/regenerate', {
                 'task_id': task_id,
-                'page_index': page.get('index') if page else None
+                'page_index': page.get('index') if page else None,
+                'has_custom_ref': bool(custom_ref_base64)
             })
 
             if not task_id or not page:
@@ -306,12 +309,21 @@ def create_image_blueprint():
                     "error": "参数错误：task_id 和 page 不能为空。\n请提供任务ID和页面信息。"
                 }), 400
 
-            logger.info(f"🔄 重新生成图片: task={task_id}, page={page.get('index')}")
+            custom_ref_bytes = None
+            if custom_ref_base64:
+                if ',' in custom_ref_base64:
+                    custom_ref_base64 = custom_ref_base64.split(',')[1]
+                custom_ref_bytes = base64.b64decode(custom_ref_base64)
+
+            logger.info(f"🔄 重新生成图片: task={task_id}, page={page.get('index')}, custom_ref={bool(custom_ref_bytes)}")
             image_service = get_image_service()
             result = image_service.regenerate_image(
-                task_id, page, use_reference,
+                task_id=task_id,
+                page=page,
+                use_reference=use_reference,
                 full_outline=full_outline,
-                user_topic=user_topic
+                user_topic=user_topic,
+                custom_reference_image=custom_ref_bytes
             )
 
             if result["success"]:
@@ -328,6 +340,138 @@ def create_image_blueprint():
                 "success": False,
                 "error": f"重新生成图片失败。\n错误详情: {error_msg}"
             }), 500
+
+    @image_bp.route('/edit', methods=['POST'])
+    def edit_image():
+        """
+        编辑/重绘图片 (In-painting)
+
+        请求体：
+        - task_id: 任务 ID (必填)
+        - index: 图片索引 (必填)
+        - prompt: 修改提示词 (必填)
+        - mask: 蒙版图片的 base64 (必填)
+        - size: 尺寸 (可选，默认 1024x1024)
+        - model: 模型 (可选)
+
+        返回：
+        - success: 是否成功
+        - image_url: 新图片 URL
+        - filename: 新文件名
+        """
+        try:
+            data = request.get_json()
+            task_id = data.get('task_id')
+            index = data.get('index')
+            prompt = data.get('prompt')
+            mask = data.get('mask')
+            size = data.get('size', '1024x1024')
+            model = data.get('model')
+
+            log_request('/edit', {
+                'task_id': task_id,
+                'index': index,
+                'prompt': prompt[:50] if prompt else None
+            })
+
+            if not all([task_id, index is not None, prompt, mask]):
+                return jsonify({
+                    "success": False,
+                    "error": "缺少必要参数：task_id, index, prompt, mask 均为必填项"
+                }), 400
+
+            image_service = get_image_service()
+            result = image_service.edit_image(
+                task_id=task_id,
+                index=index,
+                prompt=prompt,
+                mask_base64=mask,
+                size=size,
+                model=model
+            )
+
+            if result["success"]:
+                logger.info(f"✅ 图片编辑成功: {result.get('filename')}")
+            else:
+                logger.error(f"❌ 图片编辑失败: {result.get('error')}")
+
+            return jsonify(result), 200 if result["success"] else 500
+
+        except Exception as e:
+            log_error('/edit', e)
+            return jsonify({
+                "success": False,
+                "error": f"图片编辑任务启动异常: {str(e)}"
+            }), 500
+
+    @image_bp.route('/apply-logo', methods=['POST'])
+    def apply_logo():
+        """
+        手动为图片叠加品牌 Logo (智能位置与色调)
+        """
+        try:
+            data = request.get_json()
+            image_base64 = data.get('image')
+            logo_style = data.get('logo_style')
+            
+            if not image_base64:
+                return jsonify({"success": False, "error": "缺少图片数据"}), 400
+                
+            if ',' in image_base64:
+                image_base64 = image_base64.split(',')[1]
+            image_data = base64.b64decode(image_base64)
+            
+            from backend.services.brand import get_brand_service
+            brand_service = get_brand_service()
+            
+            # 使用智能叠加逻辑
+            output_data = brand_service.apply_logo_overlay(image_data, logo_style=logo_style)
+            
+            output_base64 = base64.b64encode(output_data).decode('utf-8')
+            return jsonify({
+                "success": True,
+                "image": f"data:image/png;base64,{output_base64}"
+            })
+        except Exception as e:
+            logger.error(f"手动叠加Logo失败: {e}")
+            return jsonify({"success": False, "error": str(e)}), 500
+
+    @image_bp.route('/save-canvas', methods=['POST'])
+    def save_canvas():
+        """
+        保存编辑器当前的画布内容为新版本
+        """
+        try:
+            data = request.get_json()
+            image_base64 = data.get('image')
+            task_id = data.get('task_id')
+            index = data.get('index')
+            
+            if not all([image_base64, task_id, index is not None]):
+                return jsonify({"success": False, "error": "缺少必要参数"}), 400
+                
+            if ',' in image_base64:
+                image_base64 = image_base64.split(',')[1]
+            image_data = base64.b64decode(image_base64)
+            
+            image_service = get_image_service()
+            task_dir = os.path.join(image_service.history_root_dir, task_id)
+            if not os.path.exists(task_dir):
+                return jsonify({"success": False, "error": "任务目录不存在"}), 404
+                
+            # 保存为新版本
+            new_filename = f"{index}.png"
+            actual_filename = image_service._save_image(image_data, new_filename, task_dir, auto_version=True)
+            
+            return jsonify({
+                "success": True,
+                "index": index,
+                "image_url": f"/api/images/{task_id}/{actual_filename}",
+                "filename": actual_filename
+            })
+        except Exception as e:
+            logger.error(f"保存画布失败: {e}")
+            return jsonify({"success": False, "error": str(e)}), 500
 
     # ==================== 任务状态 ====================
 

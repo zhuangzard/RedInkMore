@@ -132,6 +132,7 @@ def create_brand_blueprint():
         """上传Logo"""
         try:
             # 支持两种上传方式：multipart/form-data 或 JSON (base64)
+            description = None
             if 'logo' in request.files:
                 # 文件上传方式
                 file = request.files['logo']
@@ -140,6 +141,7 @@ def create_brand_blueprint():
 
                 image_data = file.read()
                 filename = file.filename
+                description = request.form.get('description')
             else:
                 # JSON base64方式
                 data = request.get_json()
@@ -156,9 +158,10 @@ def create_brand_blueprint():
                     image_data = base64.b64decode(logo_data)
 
                 filename = data.get('filename', 'logo.png')
+                description = data.get('description')
 
             service = get_brand_service()
-            result = service.upload_logo(brand_id, image_data, filename)
+            result = service.upload_logo(brand_id, image_data, filename, description)
 
             if not result.get("success"):
                 return jsonify(result), 404

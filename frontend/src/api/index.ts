@@ -6,6 +6,7 @@ export interface Page {
   index: number
   type: 'cover' | 'content' | 'summary'
   content: string
+  use_logo?: boolean
 }
 
 export interface OutlineResponse {
@@ -101,6 +102,7 @@ export async function regenerateImage(
   context?: {
     fullOutline?: string
     userTopic?: string
+    customReferenceImage?: string // Base64
   }
 ): Promise<{ success: boolean; index: number; image_url?: string; error?: string }> {
   const response = await axios.post(`${API_BASE_URL}/regenerate`, {
@@ -108,8 +110,30 @@ export async function regenerateImage(
     page,
     use_reference: useReference,
     full_outline: context?.fullOutline,
-    user_topic: context?.userTopic
+    user_topic: context?.userTopic,
+    custom_reference_image: context?.customReferenceImage
   })
+  return response.data
+}
+
+export interface EditImageParams {
+  task_id: string
+  index: number
+  prompt: string
+  mask: string
+  size?: string
+  model?: string
+  quality?: string
+}
+
+export async function editImage(params: EditImageParams): Promise<{
+  success: boolean
+  index: number
+  image_url?: string
+  filename?: string
+  error?: string
+}> {
+  const response = await axios.post(`${API_BASE_URL}/edit`, params)
   return response.data
 }
 
@@ -226,6 +250,11 @@ export interface HistoryDetail {
   }
   status: string
   thumbnail: string | null
+  content?: {
+    titles: string[]
+    copywriting: string
+    tags: string[]
+  }
 }
 
 /**
@@ -245,6 +274,12 @@ export interface UpdateHistoryParams {
   images?: { task_id: string | null; generated: string[] }
   status?: string
   thumbnail?: string
+  title?: string
+  content?: {
+    titles: string[]
+    copywriting: string
+    tags: string[]
+  }
 }
 
 /**
@@ -817,4 +852,35 @@ export async function generateContent(
     outline
   })
   return response.data
+}
+
+/**
+ * 手动叠加 Logo
+ */
+export async function applyLogo(
+  image: string,
+  logo_style: 'auto' | 'light' | 'dark' = 'auto'
+): Promise<{ success: boolean; image: string; error?: string }> {
+  const response = await axios.post(`${API_BASE_URL}/apply-logo`, { image, logo_style })
+  return response.data
+}
+
+/**
+ * 保存编辑器画布
+ */
+export async function saveCanvas(params: {
+  image: string
+  task_id: string
+  index: number
+}): Promise<{ success: boolean; image_url: string; filename: string; error?: string }> {
+  const response = await axios.post(`${API_BASE_URL}/save-canvas`, params)
+  return response.data
+}
+
+/**
+ * 导出 Markdown
+ */
+export async function exportMarkdown(recordId: string): Promise<void> {
+  const url = `${API_BASE_URL}/history/${recordId}/export/markdown`
+  window.open(url, '_blank')
 }

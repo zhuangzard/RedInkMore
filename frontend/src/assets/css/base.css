@@ -25,8 +25,7 @@ body {
   width: var(--sidebar-width);
   background: var(--bg-sidebar);
   height: 100vh;
-  position: fixed;
-  left: 0;
+  position: sticky;
   top: 0;
   border-right: 1px solid var(--border-color);
   padding: 32px 24px;
@@ -34,11 +33,12 @@ body {
   flex-direction: column;
   z-index: 100;
   transition: all 0.3s ease;
+  flex-shrink: 0;
 }
 
 .layout-main {
-  margin-left: var(--sidebar-width);
   flex: 1;
+  min-width: 0;
   padding: 40px 60px;
   min-height: 100vh;
   background: linear-gradient(135deg, #FAFAFA 0%, #F4F5F7 100%);
@@ -62,7 +62,8 @@ body {
 }
 
 .logo-text {
-  display: none; /* 新 logo 已包含文字，隐藏重复文字 */
+  display: none;
+  /* 新 logo 已包含文字，隐藏重复文字 */
 }
 
 /* 导航菜单 */
@@ -203,4 +204,42 @@ body {
 .footer-license a:hover {
   color: var(--primary);
   text-decoration: underline;
+}
+
+/* 响应式适配 */
+@media (max-width: 1024px) {
+  .layout-main {
+    padding: 30px 40px;
+  }
+}
+
+@media (max-width: 768px) {
+  :root {
+    --sidebar-width: 80px;
+    /* 窄版侧边栏 */
+  }
+
+  .layout-sidebar {
+    padding: 32px 12px;
+  }
+
+  .nav-item {
+    justify-content: center;
+    padding: 14px 0;
+  }
+
+  .nav-item span,
+  .logo-text,
+  .nav-item {
+    font-size: 0;
+    /* 仅显示图标 */
+  }
+
+  .nav-item svg {
+    margin: 0;
+  }
+
+  .layout-main {
+    padding: 24px 20px;
+  }
 }

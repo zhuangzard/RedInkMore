@@ -12,6 +12,7 @@ import {
   activateBrand,
   uploadLogo,
   deleteLogo,
+  deleteLogoById,
   getContents,
   addContent,
   deleteContent,
@@ -218,7 +219,7 @@ export const useBrandStore = defineStore('brand', {
     /**
      * 上传Logo
      */
-    async uploadBrandLogo(file: File): Promise<boolean> {
+    async uploadBrandLogo(file: File, description?: string): Promise<boolean> {
       if (!this.currentBrand) {
         this.error = '请先选择品牌'
         return false
@@ -228,7 +229,7 @@ export const useBrandStore = defineStore('brand', {
       this.error = null
 
       try {
-        const result = await uploadLogo(this.currentBrand.id, file)
+        const result = await uploadLogo(this.currentBrand.id, file, description)
         if (result.success) {
           // 更新当前品牌的Logo信息
           if (this.currentBrand) {
@@ -260,7 +261,7 @@ export const useBrandStore = defineStore('brand', {
     /**
      * 删除Logo
      */
-    async removeLogo(): Promise<boolean> {
+    async removeLogo(logoId?: string): Promise<boolean> {
       if (!this.currentBrand) {
         this.error = '请先选择品牌'
         return false
@@ -270,13 +271,30 @@ export const useBrandStore = defineStore('brand', {
       this.error = null
 
       try {
-        const result = await deleteLogo(this.currentBrand.id)
+        const result = logoId
+          ? await deleteLogoById(this.currentBrand.id, logoId)
+          : await deleteLogo(this.currentBrand.id)
         if (result.success) {
           // 清空Logo信息
           if (this.currentBrand) {
-            this.currentBrand.logo.file_path = null
-            this.currentBrand.logo.colors = []
-            this.currentBrand.logo.description = null
+            if (logoId && this.currentBrand.logos?.length) {
+              this.currentBrand.logos = this.currentBrand.logos.filter((logo) => logo.id !== logoId)
+              if (this.currentBrand.logo?.id === logoId) {
+                const fallback = this.currentBrand.logos[0]
+                if (fallback) {
+                  this.currentBrand.logo = fallback
+                } else {
+                  this.currentBrand.logo.file_path = null
+                  this.currentBrand.logo.colors = []
+                  this.currentBrand.logo.description = null
+                }
+              }
+            } else {
+              this.currentBrand.logo.file_path = null
+              this.currentBrand.logo.colors = []
+              this.currentBrand.logo.description = null
+              if (this.currentBrand.logos) this.currentBrand.logos = []
+            }
           }
           return true
         } else {

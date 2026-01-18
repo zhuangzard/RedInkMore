@@ -47,7 +47,6 @@
               <button
                 class="overlay-btn"
                 @click="regenerateImage(image.index)"
-                :disabled="image.status === 'retrying'"
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M23 4v6h-6"></path>
@@ -55,6 +54,27 @@
                 </svg>
                 重新生成
               </button>
+              <button
+                class="overlay-btn edit-btn"
+                @click="openEditor(image.index, image.url)"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+                高级编辑
+              </button>
+            </div>
+            <!-- 版本切换器 -->
+            <div v-if="image.versions && image.versions.length > 1" class="version-selector">
+              <button 
+                v-for="(vUrl, vIdx) in image.versions" 
+                :key="vIdx"
+                class="version-dot"
+                :class="{ active: image.url === vUrl }"
+                @click="store.updateImage(image.index, vUrl)"
+                :title="`版本 ${vIdx + 1}`"
+              ></button>
             </div>
           </div>
 
@@ -92,6 +112,16 @@
         </div>
       </div>
     </div>
+
+    <!-- 图片编辑器模态框 -->
+    <ImageEditor
+      :show="showEditor"
+      :image-url="editingImageUrl"
+      :task-id="store.taskId || ''"
+      :index="editingImageIndex"
+      @close="showEditor = false"
+      @success="handleEditSuccess"
+    />
   </div>
 </template>
 
@@ -99,13 +129,19 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useGeneratorStore } from '../stores/generator'
-import { generateImagesPost, regenerateImage as apiRegenerateImage, retryFailedImages as apiRetryFailed, createHistory, updateHistory, getImageUrl } from '../api'
+import { generateImagesPost, regenerateImage as apiRegenerateImage, retryFailedImages as apiRetryFailed, createHistory, updateHistory, generateContent as apiGenerateContent } from '../api'
+import ImageEditor from '../components/image/ImageEditor.vue'
 
 const router = useRouter()
 const store = useGeneratorStore()
 
 const error = ref('')
 const isRetrying = ref(false)
+
+// 编辑器状态
+const showEditor = ref(false)
+const editingImageIndex = ref(0)
+const editingImageUrl = ref('')
 
 const isGenerating = computed(() => store.progress.status === 'generating')
 
@@ -161,6 +197,21 @@ function retrySingleImage(index: number) {
 // 重新生成图片（成功的也可以重新生成，立即返回不等待）
 function regenerateImage(index: number) {
   retrySingleImage(index)
+}
+
+// 打开编辑器
+function openEditor(index: number, url: string) {
+  editingImageIndex.value = index
+  editingImageUrl.value = url
+  showEditor.value = true
+}
+
+// 编辑成功回调
+function handleEditSuccess(result: any) {
+  if (result.success && result.image_url) {
+    store.updateImage(result.index, result.image_url)
+    console.log('图片编辑成功，版本已更新')
+  }
 }
 
 // 批量重试所有失败的图片
@@ -296,7 +347,7 @@ onMounted(async () => {
               generated: generatedImages
             },
             status: status,
-            thumbnail: thumbnail
+            thumbnail: thumbnail || undefined
           })
           console.log('历史记录已更新')
         } catch (e) {
@@ -321,6 +372,38 @@ onMounted(async () => {
     // userTopic - 用户原始输入
     store.topic
   )
+
+  // --- 新增：自动生成文案内容 ---
+  if (store.content.status !== 'done' || !store.content.copywriting) {
+    store.startContentGeneration()
+    apiGenerateContent(store.topic, store.outline.raw)
+      .then(async (res) => {
+        if (res.success && res.titles && res.copywriting && res.tags) {
+          store.setContent(res.titles, res.copywriting, res.tags)
+          
+          // 如果已经有 recordId，持久化保存文案
+          if (store.recordId) {
+            try {
+              await updateHistory(store.recordId, {
+                content: {
+                  titles: res.titles,
+                  copywriting: res.copywriting,
+                  tags: res.tags
+                }
+              })
+              console.log('生成的文案已持久化保存')
+            } catch (e) {
+              console.error('持久化保存文案失败:', e)
+            }
+          }
+        } else {
+          store.setContentError(res.error || '文案生成失败')
+        }
+      })
+      .catch(err => {
+        store.setContentError(String(err))
+      })
+  }
 })
 </script>
 
@@ -354,6 +437,43 @@ onMounted(async () => {
 
 .image-preview:hover .image-overlay {
   opacity: 1;
+}
+
+.image-overlay {
+  flex-direction: column;
+  gap: 12px;
+}
+
+.edit-btn:hover {
+  background: #ff4d4f !important;
+  color: white !important;
+}
+
+.version-selector {
+  position: absolute;
+  bottom: 8px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  z-index: 5;
+}
+
+.version-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  padding: 0;
+}
+
+.version-dot.active {
+  background: white;
+  transform: scale(1.2);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.3);
 }
 
 .overlay-btn {

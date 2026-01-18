@@ -36,6 +36,28 @@ class ImageGeneratorBase(ABC):
         pass
 
     @abstractmethod
+    def edit_image(
+        self,
+        image: bytes,
+        mask: bytes,
+        prompt: str,
+        **kwargs
+    ) -> bytes:
+        """
+        编辑/重绘图片 (In-painting)
+
+        Args:
+            image: 原始图片数据
+            mask: 蒙版图片数据 (alpha 通道表示重绘区域)
+            prompt: 修改提示词
+            **kwargs: 其他参数
+
+        Returns:
+            编辑后的图片二进制数据
+        """
+        pass
+
+    @abstractmethod
     def validate_config(self) -> bool:
         """
         验证配置是否有效

@@ -83,7 +83,7 @@
               >
                 <div class="logo-preview">
                   <img :src="getLogoUrlById(brandStore.currentBrand.id, logo.id)" alt="品牌Logo" @error="handleLogoError" />
-                  <button class="btn-icon delete-btn" @click="deleteLogo(logo.id)" title="删除Logo">
+                  <button class="btn-icon delete-btn" @click="requestDeleteLogo(logo.id)" title="删除Logo">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <polyline points="3 6 5 6 21 6"></polyline>
                       <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -98,6 +98,26 @@
             </div>
             
             <div class="logo-upload">
+              <div class="upload-row">
+                <label class="upload-area compact">
+                  <input type="file" accept="image/*" data-style="light" @change="handleLogoUpload" hidden />
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                  </svg>
+                  <span>上传浅色Logo</span>
+                </label>
+                <label class="upload-area compact">
+                  <input type="file" accept="image/*" data-style="dark" @change="handleLogoUpload" hidden />
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                  </svg>
+                  <span>上传深色Logo</span>
+                </label>
+              </div>
               <label class="upload-area" @dragover.prevent @drop.prevent="handleLogoDrop">
                 <input type="file" accept="image/*" @change="handleLogoUpload" hidden />
                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -448,6 +468,28 @@
       </div>
     </div>
 
+    <!-- 删除 Logo 确认弹窗 -->
+    <div v-if="showDeleteLogoModal" class="modal-overlay" @click.self="closeDeleteLogoModal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>删除 Logo</h3>
+          <button class="btn-icon" @click="closeDeleteLogoModal">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          确定要删除这个 Logo 吗？删除后可重新上传。
+        </div>
+        <div class="modal-footer">
+          <button class="btn" @click="closeDeleteLogoModal">取消</button>
+          <button class="btn btn-danger" :disabled="brandStore.loading" @click="confirmDeleteLogo">删除</button>
+        </div>
+      </div>
+    </div>
+
     <!-- 错误提示（配置错误显示特殊样式） -->
     <div v-if="brandStore.error" class="toast error" :class="{ 'config-error': isConfigError }">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
@@ -472,6 +514,8 @@ import { useBrandStore } from '../stores/brand'
 import { getLogoUrl, parseXhsUrl } from '../api/brand'
 
 const brandStore = useBrandStore()
+const showDeleteLogoModal = ref(false)
+const pendingDeleteLogoId = ref<string | null>(null)
 
 // Helper to get logo url with cache busting
 const getLogoUrlById = (brandId: string, logoId?: string) => {
@@ -571,7 +615,9 @@ async function handleLogoUpload(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   if (file) {
-    await brandStore.uploadBrandLogo(file)
+    const style = input.dataset.style
+    const description = style === 'light' ? 'light' : style === 'dark' ? 'dark' : undefined
+    await brandStore.uploadBrandLogo(file, description)
   }
 }
 
@@ -587,25 +633,20 @@ function handleLogoError(event: Event) {
   img.style.display = 'none'
 }
 
-async function deleteLogo(logoId?: string) {
-  if (confirm('确定要删除Logo吗？')) {
-    // store.removeLogo 需要支持 logoId
-    // 目前 store.removeLogo 没参数，需要修改 store 
-    // 但是我之前在 redesign stores/brand.ts 时没有修改 removeLogo 签名?
-    // 在 Step 133 我尝试修改 removeLogo 但好像只修改了 uploadBrandLogo?
-    // 让我们检查 stores/brand.ts
-    // 确实 removeLogo 还是无参... 需要 fix store.
-    // 暂时先调用 store.removeLogo() (它现在映射到 deleteLogo(brandId) which deletes main logo or list?)
-    // 实际上 backend delete_logo 支持 logo_id.
-    // 我们需要 update store first.
-    // 鉴于 multiple changes, calling api directly here is a temporary workaround or expected?
-    // No, should go through store.
-    // I will assume store.removeLogo accepts ID, if not I will fix it in next step.
-    // actually I should fix store logic about removeLogo in previous step but I missed it.
-    // Let's pass logoId anyway, javascript won't complain at runtime, but TS might.
-    // @ts-ignore
-    await brandStore.removeLogo(logoId)
-  }
+function requestDeleteLogo(logoId?: string) {
+  pendingDeleteLogoId.value = logoId || null
+  showDeleteLogoModal.value = true
+}
+
+function closeDeleteLogoModal() {
+  showDeleteLogoModal.value = false
+  pendingDeleteLogoId.value = null
+}
+
+async function confirmDeleteLogo() {
+  if (!pendingDeleteLogoId.value) return
+  await brandStore.removeLogo(pendingDeleteLogoId.value)
+  closeDeleteLogoModal()
 }
 
 // 内容管理
@@ -800,6 +841,16 @@ function truncateText(text: string, maxLength: number): string {
 
 .logo-upload {
   flex-shrink: 0;
+}
+
+.upload-row {
+  display: flex;
+  gap: 12px;
+}
+
+.upload-area.compact {
+  width: 160px;
+  height: 120px;
 }
 
 .logo-preview {
@@ -1338,11 +1389,11 @@ function truncateText(text: string, maxLength: number): string {
 }
 
 .btn-danger {
-  background: var(--danger);
-  color: white;
+  background: var(--danger, #ff3b30);
+  color: #fff;
 }
 
 .btn-danger:hover {
-  background: var(--danger-hover);
+  background: var(--danger-hover, #e03128);
 }
 </style>

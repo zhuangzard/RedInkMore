@@ -3,6 +3,7 @@ import logging
 import os
 import uuid
 import time
+import base64
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Any, Generator, List, Optional, Tuple
@@ -92,17 +93,18 @@ class ImageService:
         with open(prompt_path, "r", encoding="utf-8") as f:
             return f.read()
 
-    def _save_image(self, image_data: bytes, filename: str, task_dir: str = None) -> str:
+    def _save_image(self, image_data: bytes, filename: str, task_dir: str = None, auto_version: bool = False) -> str:
         """
         保存图片到本地，同时生成缩略图
 
         Args:
             image_data: 图片二进制数据
-            filename: 文件名
+            filename: 文件名 (如 "0.png")
             task_dir: 任务目录（如果为None则使用当前任务目录）
+            auto_version: 如果文件已存在，是否自动增加版本号 (如 "0_v1.png")
 
         Returns:
-            保存的文件路径
+            保存的文件路径 (相对路径或文件名)
         """
         if task_dir is None:
             task_dir = self.current_task_dir
@@ -110,19 +112,35 @@ class ImageService:
         if task_dir is None:
             raise ValueError("任务目录未设置")
 
-        # 保存原图
+        base_name, ext = os.path.splitext(filename)
+        
+        # 自动版本处理
+        if auto_version:
+            filepath = os.path.join(task_dir, filename)
+            if os.path.exists(filepath):
+                # 查找现有版本
+                version = 1
+                while True:
+                    v_filename = f"{base_name}_v{version}{ext}"
+                    v_filepath = os.path.join(task_dir, v_filename)
+                    if not os.path.exists(v_filepath):
+                        filename = v_filename
+                        break
+                    version += 1
+
+        # 保存图片
         filepath = os.path.join(task_dir, filename)
         with open(filepath, "wb") as f:
             f.write(image_data)
 
-        # 生成缩略图（50KB左右）
+        # 生成缩略图
         thumbnail_data = compress_image(image_data, max_size_kb=50)
         thumbnail_filename = f"thumb_{filename}"
         thumbnail_path = os.path.join(task_dir, thumbnail_filename)
         with open(thumbnail_path, "wb") as f:
             f.write(thumbnail_data)
 
-        return filepath
+        return filename
 
     def _generate_single_image(
         self,
@@ -133,7 +151,8 @@ class ImageService:
         full_outline: str = "",
         user_images: Optional[List[bytes]] = None,
         user_topic: str = "",
-        brand_style: Optional[str] = None
+        brand_style: Optional[str] = None,
+        use_logo: bool = False
     ) -> Tuple[int, bool, Optional[str], Optional[str]]:
         """
         生成单张图片（带自动重试）
@@ -216,12 +235,22 @@ class ImageService:
                     quality=self.provider_config.get('quality', 'standard'),
                 )
 
-            # 保存图片（使用当前任务目录）
-            filename = f"{index}.png"
-            self._save_image(image_data, filename, self.current_task_dir)
-            logger.info(f"✅ 图片 [{index}] 生成成功: {filename}")
+            # 叠加品牌 Logo
+            if use_logo:
+                try:
+                    from backend.services.brand import get_brand_service
+                    brand_service = get_brand_service()
+                    image_data = brand_service.apply_logo_overlay(image_data)
+                    logger.debug(f"  已为图片 [{index}] 叠加品牌 Logo")
+                except Exception as e:
+                    logger.warning(f"  叠加 Logo 失败: {e}")
 
-            return (index, True, filename, None)
+            # 保存图片（使用当前任务目录，开启自动版本）
+            filename = f"{index}.png"
+            actual_filename = self._save_image(image_data, filename, self.current_task_dir, auto_version=True)
+            logger.info(f"✅ 图片 [{index}] 生成成功: {actual_filename}")
+
+            return (index, True, actual_filename, None)
 
         except Exception as e:
             error_msg = str(e)
@@ -319,7 +348,8 @@ class ImageService:
             # 生成封面（使用用户上传的图片作为参考）
             index, success, filename, error = self._generate_single_image(
                 cover_page, task_id, reference_image=None, full_outline=full_outline,
-                user_images=compressed_user_images, user_topic=user_topic, brand_style=brand_style
+                user_images=compressed_user_images, user_topic=user_topic, brand_style=brand_style,
+                use_logo=cover_page.get("use_logo", False)
             )
 
             if success:
@@ -390,7 +420,8 @@ class ImageService:
                             full_outline,  # 传入完整大纲
                             compressed_user_images,  # 用户上传的参考图片（已压缩）
                             user_topic,  # 用户原始输入
-                            brand_style  # 品牌风格
+                            brand_style,  # 品牌风格
+                            page.get("use_logo", False)
                         ): page
                         for page in other_pages
                     }
@@ -492,7 +523,8 @@ class ImageService:
                         full_outline,
                         compressed_user_images,
                         user_topic,
-                        brand_style
+                        brand_style,
+                        page.get("use_logo", False)
                     )
 
                     if success:
@@ -543,17 +575,19 @@ class ImageService:
         page: Dict,
         use_reference: bool = True,
         full_outline: str = "",
-        user_topic: str = ""
+        user_topic: str = "",
+        custom_reference_image: Optional[bytes] = None
     ) -> Dict[str, Any]:
         """
-        重试生成单张图片
+        重载/重新生成单张图片
 
         Args:
             task_id: 任务ID
             page: 页面数据
-            use_reference: 是否使用封面作为参考
-            full_outline: 完整大纲文本（从前端传入）
-            user_topic: 用户原始输入（从前端传入）
+            use_reference: 是否使用参考图 (如果提供 custom_reference_image 则忽略默认值)
+            full_outline: 完整大纲文本
+            user_topic: 用户原始输入
+            custom_reference_image: 自定义参考图二进制数据
 
         Returns:
             生成结果
@@ -561,15 +595,17 @@ class ImageService:
         self.current_task_dir = os.path.join(self.history_root_dir, task_id)
         os.makedirs(self.current_task_dir, exist_ok=True)
 
-        reference_image = None
+        reference_image = custom_reference_image
         user_images = None
         brand_style = None
 
         # 首先尝试从任务状态中获取上下文
         if task_id in self._task_states:
             task_state = self._task_states[task_id]
-            if use_reference:
+            # 如果没有自定义参考图，且指定了使用默认参考，则尝试获取封面图
+            if not reference_image and use_reference:
                 reference_image = task_state.get("cover_image")
+            
             # 如果没有传入上下文，则使用任务状态中的
             if not full_outline:
                 full_outline = task_state.get("full_outline", "")
@@ -582,13 +618,13 @@ class ImageService:
         if brand_style is None:
             brand_style = _get_active_brand_style()
 
-        # 如果任务状态中没有封面图，尝试从文件系统加载
-        if use_reference and reference_image is None:
+        # 如果没有参考图且指定了使用默认参考，尝试从文件系统加载封面
+        if not reference_image and use_reference:
             cover_path = os.path.join(self.current_task_dir, "0.png")
             if os.path.exists(cover_path):
                 with open(cover_path, "rb") as f:
                     cover_data = f.read()
-                # 压缩封面图到 200KB
+                # 压缩覆盖图到 200KB
                 reference_image = compress_image(cover_data, max_size_kb=200)
 
         index, success, filename, error = self._generate_single_image(
@@ -599,7 +635,8 @@ class ImageService:
             full_outline,
             user_images,
             user_topic,
-            brand_style
+            brand_style,
+            page.get("use_logo", False)
         )
 
         if success:
@@ -678,7 +715,8 @@ class ImageService:
                     full_outline,  # 传入完整大纲
                     user_images,
                     user_topic,
-                    brand_style  # 传入品牌风格
+                    brand_style,  # 传入品牌风格
+                    page.get("use_logo", False)
                 ): page
                 for page in pages
             }
@@ -743,7 +781,8 @@ class ImageService:
         page: Dict,
         use_reference: bool = True,
         full_outline: str = "",
-        user_topic: str = ""
+        user_topic: str = "",
+        custom_reference_image: Optional[bytes] = None
     ) -> Dict[str, Any]:
         """
         重新生成图片（用户手动触发，即使成功的也可以重新生成）
@@ -751,9 +790,10 @@ class ImageService:
         Args:
             task_id: 任务ID
             page: 页面数据
-            use_reference: 是否使用封面作为参考
+            use_reference: 是否使用参考图
             full_outline: 完整大纲文本
             user_topic: 用户原始输入
+            custom_reference_image: 自定义参考图二进制数据
 
         Returns:
             生成结果
@@ -761,8 +801,83 @@ class ImageService:
         return self.retry_single_image(
             task_id, page, use_reference,
             full_outline=full_outline,
-            user_topic=user_topic
+            user_topic=user_topic,
+            custom_reference_image=custom_reference_image
         )
+
+    def edit_image(
+        self,
+        task_id: str,
+        index: int,
+        prompt: str,
+        mask_base64: str,
+        size: str = "1024x1024",
+        model: str = None
+    ) -> Dict[str, Any]:
+        """
+        编辑图片 (In-painting)
+        """
+        self.current_task_dir = os.path.join(self.history_root_dir, task_id)
+        if not os.path.exists(self.current_task_dir):
+            raise ValueError(f"任务目录不存在: {task_id}")
+
+        # 获取原始图片 (尝试找最新的)
+        # 这里逻辑待优化：如何确定哪张是"当前"被编辑的？
+        # 一般是最近的一张或用户选择的那张。
+        # 简单起见，先找 index.png，如果没找到找最新的 vN? 
+        # 还是让前端传文件名过来？让前端传文件名更安全。
+        
+        # 暂时默认编辑 index.png 或其最新版本
+        original_filename = f"{index}.png"
+        original_path = os.path.join(self.current_task_dir, original_filename)
+        
+        # 如果有 versions，前端应该能指定。这里暂时用 index.png
+        if not os.path.exists(original_path):
+            raise ValueError(f"原始图片不存在: {original_path}")
+
+        with open(original_path, "rb") as f:
+            original_data = f.read()
+
+        # 解析蒙版
+        if ',' in mask_base64:
+            mask_base64 = mask_base64.split(',')[1]
+        mask_data = base64.b64decode(mask_base64)
+
+        try:
+            # 调用生成器
+            edited_data = self.generator.edit_image(
+                image=original_data,
+                mask=mask_data,
+                prompt=prompt,
+                size=size,
+                model=model
+            )
+
+            # 保存新版本
+            new_filename = f"{index}.png"
+            # 开启 auto_version=True 会自动存为 0_v1.png, 0_v2.png 等
+            actual_filename = self._save_image(edited_data, new_filename, self.current_task_dir, auto_version=True)
+            
+            logger.info(f"✅ 图片 [{index}] 编辑成功: {actual_filename}")
+
+            # 更新任务状态 (如果有的话)
+            if task_id in self._task_states:
+                # 这里可能需要支持列表来存储版本
+                pass
+
+            return {
+                "success": True,
+                "index": index,
+                "image_url": f"/api/images/{task_id}/{actual_filename}",
+                "filename": actual_filename
+            }
+
+        except Exception as e:
+            logger.error(f"❌ 图片 [{index}] 编辑失败: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
 
     def get_image_path(self, task_id: str, filename: str) -> str:
         """

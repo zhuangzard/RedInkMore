@@ -36,6 +36,16 @@
           <div class="page-info">
              <span class="page-number">P{{ idx + 1 }}</span>
              <span class="page-type" :class="page.type">{{ getPageTypeName(page.type) }}</span>
+             
+             <!-- Logo 选项 -->
+             <label class="logo-toggle" :class="{ 'active': page.use_logo }" title="自动添加品牌 Logo">
+               <input type="checkbox" v-model="page.use_logo" style="display: none;" />
+               <svg class="logo-toggle-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                 <circle cx="12" cy="12" r="10"></circle>
+                 <path d="M12 8l4 4-4 4M8 12h7"></path>
+               </svg>
+               <span class="logo-toggle-text">Logo</span>
+             </label>
           </div>
           
           <div class="card-controls">
@@ -103,12 +113,12 @@ const onDragStart = (e: DragEvent, index: number) => {
   }
 }
 
-const onDragOver = (e: DragEvent, index: number) => {
+const onDragOver = (_e: DragEvent, index: number) => {
   if (draggedIndex.value === index) return
   dragOverIndex.value = index
 }
 
-const onDrop = (e: DragEvent, index: number) => {
+const onDrop = (_e: DragEvent, index: number) => {
   dragOverIndex.value = null
   if (draggedIndex.value !== null && draggedIndex.value !== index) {
     store.movePage(draggedIndex.value, index)
@@ -293,8 +303,8 @@ watch(
 /* 网格布局 */
 .outline-grid {
   display: grid;
-  /* 响应式列：最小宽度 280px，自动填充 */
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  /* 响应式列：最小宽度 280px (或 100%)，自动填充 */
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
   gap: 24px;
   max-width: 1400px;
   margin: 0 auto;
@@ -411,6 +421,49 @@ watch(
   color: #ddd;
   margin-top: auto;
 }
+
+/* Logo Toggle 样式 */
+.logo-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: #f0f0f0;
+  color: #999;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+  border: 1px solid transparent;
+}
+
+.logo-toggle:hover {
+  background: #e5e7eb;
+  color: #666;
+}
+
+.logo-toggle.active {
+  background: var(--primary-light, #fff0f2);
+  color: var(--primary, #ff2442);
+  border-color: var(--primary-fade, rgba(255, 36, 66, 0.1));
+}
+
+.logo-toggle-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.logo-toggle.active .logo-toggle-icon {
+  fill: var(--primary, #ff2442);
+  stroke: var(--primary, #ff2442);
+}
+
+.logo-toggle-text {
+  line-height: 1;
+}
+
 
 /* 添加卡片 */
 .add-card-dashed {

@@ -4,44 +4,32 @@
     <div class="modal-body" @click.stop>
       <!-- 头部区域 -->
       <div class="modal-header">
-        <div style="flex: 1;">
-          <!-- 标题区域 -->
-          <div class="title-section">
-            <h3
-              class="modal-title"
-              :class="{ 'collapsed': !titleExpanded && record.title.length > 80 }"
-            >
+        <div class="header-left">
+          <button class="return-btn" @click="$emit('close')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M19 12H5M12 19l-7-7 7-7"/>
+            </svg>
+            返回
+          </button>
+          <div class="header-divider"></div>
+          <div class="title-container">
+            <h3 v-if="!isEditingTitle" @dblclick="startEditingTitle" class="modal-title">
               {{ record.title }}
             </h3>
-            <button
-              v-if="record.title.length > 80"
-              class="title-expand-btn"
-              @click="titleExpanded = !titleExpanded"
-            >
-              {{ titleExpanded ? '收起' : '展开' }}
-            </button>
-          </div>
-
-          <div class="modal-meta">
-            <span>{{ record.outline.pages.length }} 张图片 · {{ formattedDate }}</span>
-            <button
-              class="view-outline-btn"
-              @click="$emit('showOutline')"
-              title="查看完整大纲"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                <polyline points="14 2 14 8 20 8"></polyline>
-                <line x1="16" y1="13" x2="8" y2="13"></line>
-                <line x1="16" y1="17" x2="8" y2="17"></line>
-              </svg>
-              查看大纲
-            </button>
+            <input
+              v-else
+              ref="titleInput"
+              v-model="editingTitle"
+              class="title-input"
+              @blur="finishEditingTitle"
+              @keyup.enter="finishEditingTitle"
+              @keyup.esc="isEditingTitle = false"
+            />
           </div>
         </div>
 
         <div class="header-actions">
-          <button class="btn download-btn" @click="$emit('downloadAll')">
+          <button class="btn btn-primary download-btn" @click="handleDownloadAll">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
               <polyline points="7 10 12 15 17 10"></polyline>
@@ -53,57 +41,102 @@
         </div>
       </div>
 
-      <!-- 图片网格 -->
-      <div class="modal-gallery-grid">
-        <div
-          v-for="(img, idx) in record.images.generated"
-          :key="idx"
-          class="modal-img-item"
-        >
-          <div
-            class="modal-img-preview"
-            v-if="img"
-            :class="{ 'regenerating': regeneratingImages.has(idx) }"
-          >
-            <img
-              :src="`/api/images/${record.images.task_id}/${img}`"
-              loading="lazy"
-              decoding="async"
-            />
-            <div class="modal-img-overlay">
-              <button
-                class="modal-overlay-btn"
-                @click="$emit('regenerate', idx)"
-                :disabled="regeneratingImages.has(idx)"
+      <!-- 主体内容滚动区域 -->
+      <div class="modal-scroll-area">
+        <div class="content-container">
+          <!-- 图片卡片区域 -->
+          <div class="modal-gallery-grid">
+            <div
+              v-for="(page, idx) in groupedImages"
+              :key="idx"
+              class="modal-img-card"
+            >
+              <div
+                class="modal-img-preview"
+                v-if="page.currentUrl"
+                @click="viewImage(page.currentUrl)"
               >
-                <svg class="regenerate-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M23 4v6h-6"></path>
-                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-                </svg>
-                {{ regeneratingImages.has(idx) ? '重绘中...' : '重新生成' }}
-              </button>
+                <img
+                  :src="getSelectedUrl(idx) || page.currentUrl"
+                  loading="lazy"
+                  decoding="async"
+                />
+                
+                <!-- 悬浮提示 -->
+                <div class="hover-overlay">预览大图</div>
+
+                <!-- 版本切换器 -->
+                <div v-if="page.allVersions.length > 1" class="version-selector" @click.stop>
+                  <button 
+                    v-for="(vUrl, vIdx) in page.allVersions" 
+                    :key="vIdx"
+                    class="version-dot"
+                    :class="{ active: (getSelectedUrl(idx) || page.currentUrl) === vUrl }"
+                    @click="selectVersion(idx, vUrl)"
+                    :title="`版本 ${vIdx + 1}`"
+                  ></button>
+                </div>
+              </div>
+              <div class="placeholder" v-else>等待生成...</div>
+
+              <div class="img-card-footer">
+                <span class="page-label">Page {{ idx + 1 }}</span>
+                <div class="card-actions">
+                  <button
+                    class="action-icon-btn"
+                    title="高级编辑"
+                    @click="openEditor(idx, getSelectedUrl(idx) || page.currentUrl)"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                    </svg>
+                    高级编辑
+                  </button>
+                  <button class="action-text-btn" @click="handleDownload(idx)">下载</button>
+                </div>
+              </div>
             </div>
           </div>
-          <div class="placeholder" v-else>Waiting...</div>
 
-          <div class="img-footer">
-            <span>Page {{ idx + 1 }}</span>
-            <span
-              v-if="img"
-              class="download-link"
-              @click="$emit('download', img, idx)"
-            >
-              下载
-            </span>
+          <!-- 文案内容区域 -->
+          <div class="content-display-wrapper">
+             <ContentDisplay 
+              :is-history="true"
+              :initial-titles="record.content?.titles?.length ? record.content.titles : [record.title]"
+              :initial-copywriting="record.content?.copywriting || '暂无内容'"
+              :initial-tags="record.content?.tags || []"
+              :loading="isGeneratingContent"
+              @generate="handleGenerateContent"
+            />
           </div>
         </div>
       </div>
     </div>
+
+    <!-- 图片编辑器模态框 (挂载在根部以避免样式干扰) -->
+    <teleport to="body">
+      <ImageEditor
+        :show="showEditor"
+        :image-url="editingImageUrl"
+        :task-id="record?.images.task_id"
+        :index="editingImageIndex"
+        :prompt="editingImagePrompt"
+        :initial-title="record?.content?.titles?.[0] || record?.title"
+        :initial-copywriting="record?.content?.copywriting"
+        :initial-tags="record?.content?.tags"
+        @close="showEditor = false"
+        @success="handleEditSuccess"
+      />
+    </teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick } from 'vue'
+import ImageEditor from '../image/ImageEditor.vue'
+import ContentDisplay from '../result/ContentDisplay.vue'
+import { updateHistory, generateContent as apiGenerateContent } from '../../api'
 
 /**
  * 图片画廊模态框组件
@@ -128,6 +161,11 @@ interface ViewingRecord {
     task_id: string
     generated: string[]
   }
+  content?: {
+    titles: string[]
+    copywriting: string
+    tags: string[]
+  }
 }
 
 // 定义 Props
@@ -138,23 +176,193 @@ const props = defineProps<{
 }>()
 
 // 定义 Emits
-defineEmits<{
+const emit = defineEmits<{
   (e: 'close'): void
   (e: 'showOutline'): void
   (e: 'downloadAll'): void
   (e: 'download', filename: string, index: number): void
   (e: 'regenerate', index: number): void
+  (e: 'editSuccess', result: { index: number; image_url: string; filename: string; content?: any }): void
+  (e: 'updateTitle', title: string): void
+  (e: 'refresh'): void
 }>()
 
-// 标题展开状态
-const titleExpanded = ref(false)
+// 标题编辑状态
+const isEditingTitle = ref(false)
+const editingTitle = ref('')
+const titleInput = ref<HTMLInputElement | null>(null)
 
-// 格式化日期
-const formattedDate = computed(() => {
-  if (!props.record) return ''
-  const d = new Date(props.record.updated_at)
-  return `${d.getMonth() + 1}/${d.getDate()}`
+/**
+ * 开始编辑标题
+ */
+function startEditingTitle() {
+  if (!props.record) return
+  editingTitle.value = props.record.title
+  isEditingTitle.value = true
+  nextTick(() => {
+    titleInput.value?.focus()
+    titleInput.value?.select()
+  })
+}
+
+/**
+ * 完成编辑并保存
+ */
+function finishEditingTitle() {
+  if (!isEditingTitle.value) return
+  isEditingTitle.value = false
+  
+  if (props.record && editingTitle.value.trim() && editingTitle.value !== props.record.title) {
+    emit('updateTitle', editingTitle.value.trim())
+  }
+}
+
+// 分组并处理版本
+const groupedImages = computed(() => {
+  if (!props.record) return []
+  const taskId = props.record.images.task_id
+  const generated = props.record.images.generated
+  const pages = props.record.outline.pages
+
+  // 将扁平列表分组
+  const groups: Record<number, string[]> = {}
+  generated.forEach((filename: string) => {
+    // 假设文件名格式为 "0.png" 或 "0_v1.png"
+    const namePart = filename.split('.')[0]
+    const pageIdxStr = namePart.split('_')[0]
+    const pageIdx = parseInt(pageIdxStr)
+    
+    if (!isNaN(pageIdx)) {
+      if (!groups[pageIdx]) groups[pageIdx] = []
+      groups[pageIdx].push(filename)
+    }
+  })
+
+  // 为每个大纲页面匹配图片版本
+  return pages.map((_: any, idx: number) => {
+    const versions = groups[idx] || []
+    
+    // 排序版本：0.png 在前，0_v1.png 随后等
+    versions.sort()
+    
+    const allVersionUrls = versions.map(v => `/api/images/${taskId}/${v}`)
+    
+    return {
+      index: idx,
+      allVersions: allVersionUrls,
+      currentUrl: allVersionUrls.length > 0 ? allVersionUrls[allVersionUrls.length - 1] : ''
+    }
+  })
 })
+
+// 选中的特定版本 (优先级高于最新的 currentUrl)
+const selectedVersions = ref<Record<number, string>>({})
+
+const getSelectedUrl = (pageIdx: number) => selectedVersions.value[pageIdx]
+
+function selectVersion(pageIdx: number, url: string) {
+  selectedVersions.value[pageIdx] = url
+}
+
+// 编辑器状态
+const showEditor = ref(false)
+const editingImageIndex = ref(0)
+const editingImageUrl = ref('')
+const editingImagePrompt = ref('')
+
+function openEditor(index: number, url: string) {
+  editingImageIndex.value = index
+  editingImageUrl.value = url
+  // 获取该页面的原始提示词
+  if (props.record && props.record.outline.pages[index]) {
+    editingImagePrompt.value = props.record.outline.pages[index].content
+  }
+  showEditor.value = true
+}
+
+const viewImage = (url: string) => {
+  const baseUrl = url.split('?')[0]
+  window.open(baseUrl + '?thumbnail=false', '_blank')
+}
+
+function handleEditSuccess(result: any) {
+  if (result.success && result.image_url) {
+    emit('editSuccess', result)
+  }
+}
+
+// 下载处理 (优先下载选中的版本)
+function handleDownloadAll() {
+  emit('downloadAll')
+}
+
+
+const isGeneratingContent = ref(false)
+
+async function handleGenerateContent() {
+  if (!props.record || isGeneratingContent.value) return
+  
+  isGeneratingContent.value = true
+  try {
+    const res = await apiGenerateContent(props.record.title, props.record.outline.raw)
+    if (res.success && res.titles && res.copywriting && res.tags) {
+      // 1. 更新后端
+      await updateHistory(props.record.id, {
+        content: {
+          titles: res.titles,
+          copywriting: res.copywriting,
+          tags: res.tags
+        }
+      })
+      
+      // 2. 更新本地显示 (注意：props 是只读的，所以我们只能修改 record 内部)
+      // 在 Vue3 中，如果 props.record 是从父组件传来的 reactive 对象，这样修改可能生效，
+      // 但更安全的方式是触发 refresh 让父组件重新加载。
+      if (props.record.content) {
+        props.record.content.titles = res.titles
+        props.record.content.copywriting = res.copywriting
+        props.record.content.tags = res.tags
+      } else {
+        props.record.content = {
+          titles: res.titles,
+          copywriting: res.copywriting,
+          tags: res.tags
+        }
+      }
+      
+      alert('内容生成成功！')
+      emit('refresh')
+    } else {
+      alert('生成内容失败: ' + (res.error || '未知错误'))
+    }
+  } catch (e: any) {
+    alert('请求失败: ' + (e.message || String(e)))
+  } finally {
+    isGeneratingContent.value = false
+  }
+}
+
+
+function handleDownload(pageIdx: number) {
+  if (!props.record) return
+  
+  const selectedUrl = getSelectedUrl(pageIdx)
+  let filename = ''
+  
+  if (selectedUrl) {
+    // 从 URL 提取文件名 (例如 /api/images/task_id/0_v1.png -> 0_v1.png)
+    filename = selectedUrl.split('/').pop()?.split('?')[0] || ''
+  } else {
+    const page = groupedImages.value[pageIdx]
+    if (page && page.currentUrl) {
+      filename = page.currentUrl.split('/').pop()?.split('?')[0] || ''
+    }
+  }
+  
+  if (filename) {
+    emit('download', filename, pageIdx)
+  }
+}
 </script>
 
 <style scoped>
@@ -167,277 +375,266 @@ const formattedDate = computed(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 40px;
+  padding: 20px;
 }
 
 /* 模态框主体 */
 .modal-body {
-  background: white;
+  background: var(--bg-body, #f8f9fa);
   width: 100%;
-  max-width: 1000px;
-  height: 90vh;
-  border-radius: 16px;
+  max-width: 1200px;
+  height: 95vh;
+  border-radius: 20px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
 }
 
 /* 头部区域 */
 .modal-header {
-  padding: 20px;
-  border-bottom: 1px solid #eee;
+  padding: 16px 24px;
+  background: white;
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   flex-shrink: 0;
-  gap: 20px;
+  z-index: 10;
 }
 
-/* 标题区域 */
-.title-section {
+.header-left {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  margin-bottom: 4px;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+}
+
+.return-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  font-size: 15px;
+  color: var(--text-main);
+  cursor: pointer;
+  padding: 8px 12px;
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+
+.return-btn:hover {
+  background: var(--bg-body);
+}
+
+.header-divider {
+  width: 1px;
+  height: 24px;
+  background: var(--border-color);
+}
+
+.title-container {
+  flex: 1;
+  min-width: 0;
 }
 
 .modal-title {
-  flex: 1;
   margin: 0;
   font-size: 18px;
   font-weight: 600;
-  line-height: 1.4;
-  color: #1a1a1a;
-  word-break: break-word;
-  transition: max-height 0.3s ease;
-}
-
-.modal-title.collapsed {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  color: var(--text-main);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: text;
 }
 
-.title-expand-btn {
-  flex-shrink: 0;
-  padding: 2px 8px;
-  background: #f0f0f0;
-  border: none;
+.title-input {
+  width: 100%;
+  font-size: 18px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border: 1px solid var(--primary);
   border-radius: 4px;
-  cursor: pointer;
-  font-size: 11px;
-  color: #666;
-  transition: all 0.2s;
-  margin-top: 2px;
-}
-
-.title-expand-btn:hover {
-  background: var(--primary, #ff2442);
-  color: white;
-}
-
-/* 元信息 */
-.modal-meta {
-  font-size: 12px;
-  color: #999;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 8px;
-}
-
-/* 查看大纲按钮 */
-.view-outline-btn {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  background: white;
-  border: 1px solid #dee2e6;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 12px;
-  color: #495057;
-  transition: all 0.2s;
-}
-
-.view-outline-btn:hover {
-  background: var(--primary, #ff2442);
-  color: white;
-  border-color: var(--primary, #ff2442);
-}
-
-/* 头部操作区 */
-.header-actions {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-
-.download-btn {
-  padding: 8px 16px;
-  font-size: 14px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  outline: none;
 }
 
 .close-icon {
   background: none;
   border: none;
-  font-size: 24px;
+  font-size: 28px;
   cursor: pointer;
-  color: #666;
-  padding: 0;
+  color: var(--text-sub);
+  padding: 0 8px;
   line-height: 1;
 }
 
-.close-icon:hover {
-  color: #333;
+/* 滚动区域 */
+.modal-scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px 24px;
+  background: var(--bg-body);
+}
+
+.content-container {
+  max-width: 1000px;
+  margin: 0 auto;
 }
 
 /* 图片网格 */
 .modal-gallery-grid {
-  flex: 1;
-  overflow-y: auto;
-  padding: 20px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 24px;
+  margin-bottom: 48px;
 }
 
-/* 单个图片项 */
-.modal-img-item {
-  display: flex;
-  flex-direction: column;
+.modal-img-card {
+  background: white;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.2s, box-shadow 0.2s;
 }
 
-/* 图片预览容器 */
+.modal-img-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-md);
+}
+
 .modal-img-preview {
   position: relative;
-  width: 100%;
   aspect-ratio: 3/4;
   overflow: hidden;
-  border-radius: 8px;
-  contain: layout style paint;
+  cursor: pointer;
 }
 
 .modal-img-preview img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  transition: transform 0.3s;
 }
 
-/* 悬浮遮罩 */
-.modal-img-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transition: opacity 0.15s ease-out;
-  pointer-events: none;
-  will-change: opacity;
-}
-
-.modal-img-preview:hover .modal-img-overlay {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-/* 重绘中状态 */
-.modal-img-preview.regenerating .modal-img-overlay {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.modal-img-preview.regenerating .regenerate-icon {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* 遮罩层按钮 */
-.modal-overlay-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  background: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 13px;
-  color: #333;
-  transition: background-color 0.2s, color 0.2s, transform 0.1s;
-  will-change: transform;
-}
-
-.modal-overlay-btn:hover {
-  background: var(--primary, #ff2442);
-  color: white;
+.modal-img-preview:hover img {
   transform: scale(1.05);
 }
 
-.modal-overlay-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  transform: none;
+.hover-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity 0.2s;
 }
 
-/* 占位符 */
+.modal-img-preview:hover .hover-overlay {
+  opacity: 1;
+}
+
+.version-selector {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  display: flex;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 4px 8px;
+  border-radius: 12px;
+  backdrop-filter: blur(4px);
+}
+
+.version-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.4);
+  padding: 0;
+  border: none;
+  cursor: pointer;
+}
+
+.version-dot.active {
+  background: white;
+}
+
+.img-card-footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.page-label {
+  font-size: 13px;
+  color: var(--text-sub);
+  font-weight: 500;
+}
+
+.card-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.action-icon-btn {
+  background: none;
+  border: none;
+  color: var(--text-sub);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.action-icon-btn:hover {
+  color: var(--primary);
+  background: var(--primary-light);
+}
+
+.action-text-btn {
+  background: none;
+  border: none;
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* 文案包装 */
+.content-display-wrapper {
+  background: white;
+  border-radius: var(--radius-xl);
+  padding: 32px;
+  box-shadow: var(--shadow-sm);
+}
+
 .placeholder {
   width: 100%;
   aspect-ratio: 3/4;
-  background: #f5f5f5;
-  border-radius: 8px;
+  background: #f0f0f0;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #999;
-  font-size: 14px;
 }
 
-/* 图片底部信息 */
-.img-footer {
-  margin-top: 8px;
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-  color: #666;
-}
-
-.download-link {
-  cursor: pointer;
-  color: var(--primary, #ff2442);
-  transition: opacity 0.2s;
-}
-
-.download-link:hover {
-  opacity: 0.7;
-}
-
-/* 响应式 */
 @media (max-width: 768px) {
-  .modal-fullscreen {
-    padding: 20px;
-  }
-
   .modal-gallery-grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 12px;
-    padding: 12px;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 16px;
   }
 }
 </style>

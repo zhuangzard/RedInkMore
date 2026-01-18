@@ -13,6 +13,7 @@ import os
 import io
 import zipfile
 import logging
+from typing import Dict
 from flask import Blueprint, request, jsonify, send_file
 from backend.services.history import get_history_service
 
@@ -199,6 +200,7 @@ def create_history_blueprint():
         - images: 图片信息 { task_id, generated: [] }
         - status: 状态（draft/generating/partial/completed/error）
         - thumbnail: 缩略图文件名
+        - title: 标题内容
 
         返回：
         - success: 是否成功
@@ -232,6 +234,8 @@ def create_history_blueprint():
             images = data.get('images')
             status = data.get('status')
             thumbnail = data.get('thumbnail')
+            title = data.get('title')
+            content = data.get('content')
 
             history_service = get_history_service()
             success = history_service.update_record(
@@ -239,7 +243,9 @@ def create_history_blueprint():
                 outline=outline,
                 images=images,
                 status=status,
-                thumbnail=thumbnail
+                thumbnail=thumbnail,
+                title=title,
+                content=content
             )
 
             if not success:
@@ -292,6 +298,37 @@ def create_history_blueprint():
             }), 500
 
     # ==================== 搜索和统计 ====================
+
+    @history_bp.route('/history/<record_id>/export/markdown', methods=['GET'])
+    def export_history_markdown(record_id):
+        """
+        导出为 Markdown 文件
+        """
+        try:
+            history_service = get_history_service()
+            result = history_service.export_markdown(record_id)
+
+            if not result["success"]:
+                return jsonify(result), 404
+
+            # 创建内存文件
+            bio = io.BytesIO()
+            bio.write(result["markdown"].encode('utf-8'))
+            bio.seek(0)
+
+            return send_file(
+                bio,
+                mimetype='text/markdown',
+                as_attachment=True,
+                download_name=result["filename"]
+            )
+
+        except Exception as e:
+            error_msg = str(e)
+            return jsonify({
+                "success": False,
+                "error": f"导出失败。\n错误详情: {error_msg}"
+            }), 500
 
     @history_bp.route('/history/search', methods=['GET'])
     def search_history():
@@ -453,7 +490,7 @@ def create_history_blueprint():
                 }), 404
 
             # 创建内存中的 ZIP 文件
-            zip_buffer = _create_images_zip(task_dir)
+            zip_buffer = _create_images_zip(task_dir, record)
 
             # 生成安全的下载文件名
             title = record.get('title', 'images')
@@ -477,12 +514,13 @@ def create_history_blueprint():
     return history_bp
 
 
-def _create_images_zip(task_dir: str) -> io.BytesIO:
+def _create_images_zip(task_dir: str, record: Dict) -> io.BytesIO:
     """
-    创建包含所有图片的 ZIP 文件
+    创建包含所有图片的 ZIP 文件，并附带文案内容
 
     Args:
         task_dir: 任务目录路径
+        record: 记录完整信息
 
     Returns:
         io.BytesIO: 内存中的 ZIP 文件
@@ -490,23 +528,56 @@ def _create_images_zip(task_dir: str) -> io.BytesIO:
     memory_file = io.BytesIO()
 
     with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zf:
-        # 遍历任务目录中的所有图片（排除缩略图）
-        for filename in os.listdir(task_dir):
-            # 跳过缩略图文件
-            if filename.startswith('thumb_'):
-                continue
-
-            if filename.endswith(('.png', '.jpg', '.jpeg')):
-                file_path = os.path.join(task_dir, filename)
-
+        # 1. 写入图片 (只写入该记录产生的图片)
+        generated = record.get('images', {}).get('generated', [])
+        for filename in generated:
+            file_path = os.path.join(task_dir, filename)
+            
+            if os.path.exists(file_path):
                 # 生成归档文件名（page_N.png 格式）
                 try:
-                    index = int(filename.split('.')[0])
-                    archive_name = f"page_{index + 1}.png"
-                except ValueError:
+                    # 处理 0.png 或 0_v1.png
+                    parts = filename.split('.')[0].split('_')
+                    index = int(parts[0])
+                    version = f"_v{parts[1]}" if len(parts) > 1 else ""
+                    archive_name = f"page_{index + 1}{version}.png"
+                except (ValueError, IndexError):
                     archive_name = filename
 
                 zf.write(file_path, archive_name)
+
+        # 2. 写入文案内容 (content.md)
+        content = record.get('content') or {}
+        title = record.get('title', '未命名笔记')
+        
+        md_lines = []
+        md_lines.append(f"# {title}")
+        md_lines.append(f"\n> **创建时间**: {record.get('created_at', '未知')}")
+        md_lines.append("\n---\n")
+        
+        # 备选标题
+        titles = content.get('titles', [])
+        if titles:
+            md_lines.append("## 备选标题")
+            for i, t in enumerate(titles):
+                md_lines.append(f"{i+1}. {t}")
+            md_lines.append("")
+        
+        # 正文
+        copywriting = content.get('copywriting')
+        if copywriting:
+            md_lines.append("## 正文文案")
+            md_lines.append(copywriting)
+            md_lines.append("")
+            
+        # 标签
+        tags = content.get('tags', [])
+        if tags:
+            md_lines.append("## 话题标签")
+            md_lines.append(" ".join([f"#{tag}" for tag in tags]))
+            md_lines.append("")
+            
+        zf.writestr("content.md", "\n".join(md_lines).encode('utf-8'))
 
     # 将指针移到开始位置
     memory_file.seek(0)

@@ -1,31 +1,41 @@
 <template>
   <div class="content-display">
     <!-- 生成按钮 -->
-    <div v-if="content.status === 'idle'" class="generate-section">
+    <div v-if="displayStatus === 'idle'" class="generate-section">
       <button class="btn btn-primary generate-btn" @click="handleGenerate" :disabled="loading">
-        <svg v-if="!loading" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M12 5v14M5 12h14"/>
-        </svg>
-        <span v-if="loading" class="spinner"></span>
-        {{ loading ? '生成中...' : '生成标题、文案和标签' }}
+        <template v-if="loading">
+          <span class="spinner"></span>
+          生成中...
+        </template>
+        <template v-else>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          {{ isHistory ? '一键补全标题、文案和标签' : '一键生成小红书爆款内容' }}
+        </template>
       </button>
+      <p class="generate-hint">
+        {{ isHistory ? '该历史记录目前没有正文内容，点击上方按钮即可一键补全' : '基于大纲 AI 自动生成适配小红书的爆款标题、正文及标签' }}
+      </p>
     </div>
 
     <!-- 加载状态 -->
-    <div v-else-if="content.status === 'generating'" class="loading-section">
+    <div v-else-if="displayStatus === 'generating'" class="loading-section">
       <div class="loading-spinner"></div>
       <p>正在生成标题、文案和标签...</p>
     </div>
 
     <!-- 错误状态 -->
-    <div v-else-if="content.status === 'error'" class="error-section">
+    <div v-else-if="displayStatus === 'error'" class="error-section">
       <div class="error-icon">!</div>
-      <p class="error-message">{{ content.error || '生成失败，请重试' }}</p>
+      <p class="error-message">{{ displayError || '生成失败，请重试' }}</p>
       <button class="btn btn-secondary" @click="handleGenerate">重新生成</button>
     </div>
 
     <!-- 生成结果 -->
-    <div v-else-if="content.status === 'done'" class="result-section">
+    <div v-else-if="displayStatus === 'done'" class="result-section">
       <!-- 标题区域 -->
       <div class="content-card">
         <div class="card-header">
@@ -47,7 +57,7 @@
           </button>
         </div>
         <div class="titles-list">
-          <div v-for="(title, index) in content.titles" :key="index" class="title-item" @click="copyTitle(title, index)">
+          <div v-for="(title, index) in displayTitles" :key="index" class="title-item" @click="copyTitle(title, index)">
             <span class="title-badge">{{ index === 0 ? '推荐' : `备选${index}` }}</span>
             <span class="title-text">{{ title }}</span>
             <span class="copy-hint" :class="{ show: copiedTitleIndex === index }">
@@ -82,6 +92,7 @@
         </div>
         <div class="copywriting-content">
           <p v-for="(paragraph, index) in formattedCopywriting" :key="index">{{ paragraph }}</p>
+          <p v-if="formattedCopywriting.length === 0" class="empty-hint">暂无文案正文</p>
         </div>
       </div>
 
@@ -108,7 +119,7 @@
         </div>
         <div class="tags-list">
           <span
-            v-for="(tag, index) in content.tags"
+            v-for="(tag, index) in displayTags"
             :key="index"
             class="tag-item"
             @click="copyTag(tag, index)"
@@ -116,17 +127,24 @@
           >
             #{{ tag }}
           </span>
+          <p v-if="displayTags.length === 0" class="empty-hint">暂无标签</p>
         </div>
       </div>
 
       <!-- 重新生成按钮 -->
-      <div class="regenerate-section">
-        <button class="btn btn-secondary" @click="handleGenerate" :disabled="loading">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M23 4v6h-6M1 20v-6h6"/>
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-          </svg>
-          {{ loading ? '生成中...' : '重新生成' }}
+      <div v-if="displayStatus === 'done'" class="regenerate-section">
+        <button class="btn btn-outline" @click="handleGenerate" :disabled="loading">
+          <template v-if="loading">
+            <span class="spinner"></span>
+            正在重新生成...
+          </template>
+          <template v-else>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 4v6h-6"></path>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+            </svg>
+            重新生成文案
+          </template>
         </button>
       </div>
     </div>
@@ -138,28 +156,71 @@ import { ref, computed } from 'vue'
 import { useGeneratorStore } from '../../stores/generator'
 import { generateContent } from '../../api'
 
+const props = defineProps<{
+  isHistory?: boolean
+  initialTitles?: string[]
+  initialCopywriting?: string
+  initialTags?: string[]
+  loading?: boolean
+}>()
+
+const emit = defineEmits<{
+  (e: 'generate'): void
+}>()
+
 const store = useGeneratorStore()
 
-const loading = ref(false)
+const internalLoading = ref(false)
+const loading = computed(() => props.loading || internalLoading.value)
 const copiedTitles = ref(false)
 const copiedCopywriting = ref(false)
 const copiedTags = ref(false)
 const copiedTitleIndex = ref<number | null>(null)
 const copiedTagIndex = ref<number | null>(null)
 
-const content = computed(() => store.content)
+const contentState = computed(() => store.content)
+
+const displayStatus = computed(() => {
+  if (props.isHistory) {
+    // 如果是历史记录模式，且没有任何有效内容，则允许生成
+    const hasContent = (props.initialTitles && props.initialTitles.length > 0 && !props.initialTitles[0].startsWith('http')) || 
+                      (props.initialCopywriting && props.initialCopywriting !== '暂无内容')
+    return hasContent ? 'done' : 'idle'
+  }
+  return contentState.value.status
+})
+
+const displayError = computed(() => contentState.value.error)
+
+const displayTitles = computed(() => {
+  return props.initialTitles || contentState.value.titles
+})
+
+const displayCopywriting = computed(() => {
+  return props.initialCopywriting || contentState.value.copywriting
+})
+
+const displayTags = computed(() => {
+  return props.initialTags || contentState.value.tags
+})
 
 // 格式化文案（按换行分段）
 const formattedCopywriting = computed(() => {
-  if (!content.value.copywriting) return []
-  return content.value.copywriting.split('\n').filter(p => p.trim())
+  const text = displayCopywriting.value
+  if (!text) return []
+  return text.split('\n').filter((p: string) => p.trim())
 })
 
 // 生成内容
 async function handleGenerate() {
   if (loading.value) return
 
-  loading.value = true
+  if (props.isHistory) {
+    emit('generate')
+    return
+  }
+
+  internalLoading.value = true
   store.startContentGeneration()
 
   try {
@@ -173,7 +234,7 @@ async function handleGenerate() {
   } catch (error: any) {
     store.setContentError(error.message || '生成失败，请重试')
   } finally {
-    loading.value = false
+    internalLoading.value = false
   }
 }
 
@@ -203,7 +264,7 @@ async function copyToClipboard(text: string): Promise<boolean> {
 
 // 复制所有标题
 async function copyTitles() {
-  const text = content.value.titles.join('\n')
+  const text = displayTitles.value.join('\n')
   if (await copyToClipboard(text)) {
     copiedTitles.value = true
     setTimeout(() => copiedTitles.value = false, 2000)
@@ -220,7 +281,8 @@ async function copyTitle(title: string, index: number) {
 
 // 复制文案
 async function copyCopywriting() {
-  if (await copyToClipboard(content.value.copywriting)) {
+  const text = displayCopywriting.value || ''
+  if (await copyToClipboard(text)) {
     copiedCopywriting.value = true
     setTimeout(() => copiedCopywriting.value = false, 2000)
   }
@@ -228,7 +290,7 @@ async function copyCopywriting() {
 
 // 复制所有标签
 async function copyTags() {
-  const text = content.value.tags.map(t => `#${t}`).join(' ')
+  const text = displayTags.value.map((t: string) => `#${t}`).join(' ')
   if (await copyToClipboard(text)) {
     copiedTags.value = true
     setTimeout(() => copiedTags.value = false, 2000)
@@ -521,5 +583,12 @@ async function copyTag(tag: string, index: number) {
   border-top-color: white;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
+}
+.empty-hint {
+  color: var(--text-sub, #999);
+  font-size: 14px;
+  font-style: italic;
+  margin: 0;
+  padding: 8px 0;
 }
 </style>

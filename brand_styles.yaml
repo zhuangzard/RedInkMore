@@ -3,18 +3,18 @@ brands:
   brand_99e9baf9:
     name: Primary
     created_at: '2026-01-17T21:23:35.090240'
-    updated_at: '2026-01-18T09:52:47.775767'
+    updated_at: '2026-01-18T20:25:29.293423'
     logo: &id001
-      id: logo_462e20dc
-      file_path: brand_assets/brand_99e9baf9/logo_462e20dc.png
+      id: logo_52e3ac08
+      file_path: brand_assets/brand_99e9baf9/logo_52e3ac08.png
       colors:
       - '#900000'
-      - '#7080A0'
-      - '#101050'
+      - '#001050'
+      - '#002050'
       - '#001040'
-      - '#000020'
-      description: null
-      created_at: '2026-01-17T23:09:56.772204'
+      - '#001030'
+      description: dark
+      created_at: '2026-01-18T20:25:29.293413'
     style_dna:
       writing_style:
         tone: 以专业理性为主、带轻度“种草/榜单”式的兴奋感；整体偏教育咨询口吻，强调信息权威与可操作性，同时穿插第一人称经历增强可信度与亲近感，结尾常用“欢迎咨询/联系我们”做转化。
@@ -182,14 +182,14 @@ brands:
       - brand_assets/brand_99e9baf9/competitors/competitor_fa85d5a2_5_dl.jpg
       created_at: '2026-01-17T23:11:44.963917'
     logos:
-    - id: logo_b7fc87bf
-      file_path: brand_assets/brand_99e9baf9/logo_b7fc87bf.png
+    - id: logo_dde0748c
+      file_path: brand_assets/brand_99e9baf9/logo_dde0748c.png
       colors:
       - '#900000'
-      - '#001050'
-      - '#002050'
+      - '#7080A0'
+      - '#101050'
       - '#001040'
-      - '#001030'
-      description: null
-      created_at: '2026-01-17T23:09:28.154350'
+      - '#000020'
+      description: light
+      created_at: '2026-01-18T20:24:45.129798'
     - *id001

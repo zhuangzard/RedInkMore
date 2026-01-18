@@ -92,6 +92,10 @@ class ImageApiGenerator(ImageGeneratorBase):
         else:
             return self._generate_via_images_api(prompt, aspect_ratio, model, reference_image, reference_images)
 
+    def edit_image(self, image: bytes, mask: bytes, prompt: str, **kwargs) -> bytes:
+        """编辑图片 (当前暂未为 Image API 实现)"""
+        raise NotImplementedError("Image API 暂不支持图片编辑功能")
+
     def _generate_via_images_api(
         self,
         prompt: str,

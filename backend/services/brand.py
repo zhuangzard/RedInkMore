@@ -14,6 +14,7 @@ import yaml
 from PIL import Image
 import io
 import colorsys
+import numpy as np
 from collections import Counter
 
 
@@ -215,7 +216,13 @@ class BrandService:
 
     # ==================== Logo 处理 ====================
 
-    def upload_logo(self, brand_id: str, image_data: bytes, filename: str = "logo.png") -> Dict:
+    def upload_logo(
+        self,
+        brand_id: str,
+        image_data: bytes,
+        filename: str = "logo.png",
+        description: Optional[str] = None
+    ) -> Dict:
         """
         上传Logo并提取颜色
 
@@ -257,7 +264,7 @@ class BrandService:
             "id": logo_id,
             "file_path": relative_path,
             "colors": colors,
-            "description": None,
+            "description": description,
             "created_at": datetime.now().isoformat()
         }
 
@@ -632,6 +639,173 @@ class BrandService:
             return os.path.join(self.root_dir, logo_path)
 
         return None
+
+    def apply_logo_overlay(
+        self,
+        image_data: bytes,
+        brand_id: str = None,
+        logo_style: str = None
+    ) -> bytes:
+        """
+        在图片上叠加品牌Logo - 智能优化版
+        - 自动检测最佳位置（四个角中背景最简单的位置）
+        - 自动选取颜色匹配的 Logo
+        - 保持视觉克制，占用面积小
+        """
+        try:
+            
+            # 1. 获取品牌和Logo列表
+            if not brand_id:
+                active_brand = self.get_active_brand()
+                if not active_brand: return image_data
+                brand_id = active_brand["id"]
+
+            brand_data = self.get_brand(brand_id)
+            if not brand_data or not brand_data.get("logos"): return image_data
+            logos = brand_data.get("logos", [])
+
+            # 2. 加载背景图
+            bg_img = Image.open(io.BytesIO(image_data))
+            bg_w, bg_h = bg_img.size
+            
+            # --- 智能参数设置 ---
+            # 缩小 Logo 占比：从 15% 降至 10%，使其更克制
+            logo_width_ratio = 0.10 
+            padding_ratio = 0.03 # 3% 的外边距
+            
+            # 3. 评估四个角落，选取“最不显眼”但“最清晰”的位置
+            # 定义四个角落的采样区域 (左上, 右上, 左下, 右下)
+            corner_size = int(min(bg_w, bg_h) * 0.25)
+            corners = {
+                "top_left": (0, 0, corner_size, corner_size),
+                "top_right": (bg_w - corner_size, 0, bg_w, corner_size),
+                "bottom_left": (0, bg_h - corner_size, corner_size, bg_h),
+                "bottom_right": (bg_w - corner_size, bg_h - corner_size, bg_w, bg_h)
+            }
+            
+            best_corner = "bottom_right" # 缺省值
+            min_complexity = float('inf')
+            corner_stats = {}
+            
+            for name, box in corners.items():
+                crop = bg_img.crop(box).convert('L')
+                arr = np.array(crop)
+                # 复杂度定义：标准差（变化越大越复杂）
+                complexity = np.std(arr)
+                avg_brightness = np.mean(arr)
+                corner_stats[name] = {"brightness": avg_brightness, "complexity": complexity}
+                
+                # 优先选取背景相对统一（复杂度低）的位置，尤其是底部
+                adj_complexity = complexity
+                if name.startswith("top"): adj_complexity *= 1.2 # 稍微降低顶部权重
+                
+                if adj_complexity < min_complexity:
+                    min_complexity = adj_complexity
+                    best_corner = name
+
+            # 4. 根据选中位置的亮度决定 Logo 类型 (深色/浅色)
+            target_style = None
+            if logo_style in ["light", "dark"]:
+                target_style = logo_style
+            else:
+                target_brightness = corner_stats[best_corner]["brightness"]
+                is_dark_bg = target_brightness < 140 # 稍微偏暗即视为深色背景
+                target_style = "light" if is_dark_bg else "dark"
+            
+            # 选择最佳匹配的 Logo
+            selected_logo_data = None
+            for logo in logos:
+                desc = (logo.get("description") or "").lower()
+                path = (logo.get("file_path") or "").lower()
+                # 关键字匹配策略
+                is_light = any(k in desc or k in path for k in ["light", "white", "浅色", "白色"])
+                is_dark = any(k in desc or k in path for k in ["dark", "black", "深色", "黑色"])
+                
+                if (target_style == "light" and is_light) or (target_style == "dark" and is_dark):
+                    selected_logo_data = logo
+                    break
+            
+            if not selected_logo_data:
+                # 备选：用亮度估计挑选浅色/深色 Logo
+                def estimate_luminance(logo_item: Dict) -> Optional[float]:
+                    logo_path = logo_item.get("file_path")
+                    if not logo_path:
+                        return None
+                    full_path = os.path.join(self.root_dir, logo_path)
+                    if not os.path.exists(full_path):
+                        return None
+                    try:
+                        img = Image.open(full_path).convert('L')
+                        return float(np.mean(np.array(img)))
+                    except Exception:
+                        return None
+
+                logo_with_luminance = []
+                for logo in logos:
+                    lum = estimate_luminance(logo)
+                    if lum is not None:
+                        logo_with_luminance.append((logo, lum))
+
+                if logo_with_luminance:
+                    if target_style == "light":
+                        selected_logo_data = max(logo_with_luminance, key=lambda x: x[1])[0]
+                    else:
+                        selected_logo_data = min(logo_with_luminance, key=lambda x: x[1])[0]
+
+            if not selected_logo_data:
+                # 最后兜底：选主 Logo
+                selected_logo_data = brand_data.get("logo")
+            
+            if not selected_logo_data or not selected_logo_data.get("file_path"): return image_data
+            
+            # 5. 加载并精致缩放 Logo
+            logo_path = os.path.join(self.root_dir, selected_logo_data["file_path"])
+            if not os.path.exists(logo_path): return image_data
+            
+            logo_img = Image.open(logo_path)
+            # 限制宽度
+            logo_w = int(bg_w * logo_width_ratio)
+            logo_w = max(min(80, bg_w), logo_w) # 最小不低于80，除非图片本就小
+            
+            # 保持比例
+            logo_h = int(logo_w * (logo_img.height / logo_img.width))
+            logo_img = logo_img.resize((logo_w, logo_h), Image.Resampling.LANCZOS)
+            
+            # 6. 计算精确坐标
+            padding = int(bg_w * padding_ratio)
+            if best_corner == "top_left":
+                pos = (padding, padding)
+            elif best_corner == "top_right":
+                pos = (bg_w - logo_w - padding, padding)
+            elif best_corner == "bottom_left":
+                pos = (padding, bg_h - logo_h - padding)
+            else: # bottom_right
+                pos = (bg_w - logo_w - padding, bg_h - logo_h - padding)
+                
+            # 7. 贴图并导出
+            if logo_img.mode == 'RGBA':
+                if bg_img.mode != 'RGBA': bg_img = bg_img.convert('RGBA')
+                bg_img.paste(logo_img, pos, logo_img)
+            else:
+                bg_img.paste(logo_img, pos)
+                
+            output = io.BytesIO()
+            fmt = bg_img.format if bg_img.format else 'PNG'
+            if fmt == 'MPO': fmt = 'JPEG'
+            
+            # JPEG 不支持 RGBA
+            final_img = bg_img
+            if final_img.mode == 'RGBA' and fmt in ['JPEG', 'JPG']:
+                final_img = final_img.convert('RGB')
+                
+            final_img.save(output, format=fmt, quality=95)
+            return output.getvalue()
+
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"智能叠加Logo失败: {e}")
+            return image_data
+
 
 
 # 全局服务实例

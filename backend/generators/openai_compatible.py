@@ -83,6 +83,70 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
             # 默认使用 images API
             return self._generate_via_images_api(prompt, size, model, quality)
 
+    def edit_image(
+        self,
+        image: bytes,
+        mask: bytes,
+        prompt: str,
+        size: str = "1024x1024",
+        model: str = None,
+        **kwargs
+    ) -> bytes:
+        """
+        编辑图片 (In-painting)
+
+        使用 OpenAI /v1/images/edits 接口
+        """
+        if model is None:
+            model = self.default_model
+
+        logger.info(f"OpenAI 兼容 API 编辑图片: model={model}, size={size}")
+
+        # 构建 URL
+        url = f"{self.base_url}/v1/images/edits"
+        logger.debug(f"  发送请求到: {url}")
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}"
+        }
+
+        # 构建 multipart/form-data
+        files = {
+            "image": ("image.png", image, "image/png"),
+            "mask": ("mask.png", mask, "image/png"),
+            "prompt": (None, prompt),
+            "n": (None, "1"),
+            "size": (None, size),
+            "response_format": (None, "b64_json")
+        }
+
+        if model:
+            files["model"] = (None, model)
+
+        try:
+            response = requests.post(url, headers=headers, files=files, timeout=300)
+            
+            if response.status_code != 200:
+                error_detail = response.text[:500]
+                logger.error(f"OpenAI Edits API 请求失败: status={response.status_code}, error={error_detail}")
+                raise Exception(f"图片编辑失败 (状态码: {response.status_code})\n详情: {error_detail}")
+
+            result = response.json()
+            if "data" not in result or len(result["data"]) == 0:
+                raise ValueError("API 未返回编辑后的图片数据")
+
+            image_data = result["data"][0]
+            if "b64_json" in image_data:
+                return base64.b64decode(image_data["b64_json"])
+            elif "url" in image_data:
+                return self._download_image(image_data["url"])
+            
+            raise ValueError("无法解析图像数据")
+
+        except Exception as e:
+            logger.error(f"图片编辑异常: {str(e)}")
+            raise e
+
     def _generate_via_images_api(
         self,
         prompt: str,

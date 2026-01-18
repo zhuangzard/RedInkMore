@@ -443,6 +443,10 @@ class GoogleGenAIGenerator(ImageGeneratorBase):
         logger.info(f"✅ Google GenAI 图片生成成功: {len(image_data)} bytes")
         return image_data
 
+    def edit_image(self, image: bytes, mask: bytes, prompt: str, **kwargs) -> bytes:
+        """编辑图片 (当前暂未为 Google GenAI 实现)"""
+        raise NotImplementedError("Google GenAI 暂不支持图片编辑功能")
+
     def get_supported_aspect_ratios(self) -> list:
         """获取支持的宽高比"""
         return ["1:1", "3:4", "4:3", "16:9", "9:16"]

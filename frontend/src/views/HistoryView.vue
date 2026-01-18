@@ -106,6 +106,9 @@
       @regenerate="regenerateHistoryImage"
       @downloadAll="downloadAllImages"
       @download="downloadImage"
+      @editSuccess="handleGalleryEditSuccess"
+      @updateTitle="handleGalleryTitleUpdate"
+      @refresh="loadData"
     />
 
     <!-- 大纲查看模态框 -->
@@ -229,7 +232,7 @@ async function loadRecord(id: string) {
     store.setRecordId(res.record.id)
     if (res.record.images.generated.length > 0) {
       store.taskId = res.record.images.task_id
-      store.images = res.record.outline.pages.map((page, idx) => {
+      store.images = res.record.outline.pages.map((_, idx) => {
         const filename = res.record!.images.generated[idx]
         return {
           index: idx,
@@ -332,6 +335,79 @@ async function regenerateHistoryImage(index: number) {
   } catch (e) {
     regeneratingImages.value.delete(index)
     alert('重新生成失败: ' + String(e))
+  }
+}
+
+async function handleGalleryEditSuccess(result: { index: number; image_url: string; filename: string; content?: any }) {
+  if (!viewingRecord.value) return
+
+  // 更新本地显示的记录数据
+  if (!viewingRecord.value.images.generated.includes(result.filename)) {
+    viewingRecord.value.images.generated.push(result.filename)
+  }
+  
+  // 更新内容 (标题、文案、标签)
+  if (result.content) {
+    if (!viewingRecord.value.content) {
+      viewingRecord.value.content = { titles: [], copywriting: '', tags: [] }
+    }
+    if (result.content.title) {
+      viewingRecord.value.content.titles[0] = result.content.title
+      viewingRecord.value.title = result.content.title
+    }
+    if (result.content.copywriting) {
+      viewingRecord.value.content.copywriting = result.content.copywriting
+    }
+    if (result.content.tags) {
+      viewingRecord.value.content.tags = result.content.tags
+    }
+  }
+
+  // 同步到服务器
+  try {
+    await updateHistory(viewingRecord.value.id, {
+      images: {
+        task_id: viewingRecord.value.images.task_id,
+        generated: viewingRecord.value.images.generated
+      },
+      content: viewingRecord.value.content,
+      title: viewingRecord.value.title
+    })
+    console.log('历史记录已更新 (编辑成功)')
+  } catch (e) {
+    console.error('更新历史记录失败:', e)
+  }
+}
+
+/**
+ * 处理历史记录标题更新
+ */
+async function handleGalleryTitleUpdate(newTitle: string) {
+  if (!viewingRecord.value) return
+
+  const oldTitle = viewingRecord.value.title
+  viewingRecord.value.title = newTitle
+
+  try {
+    const res = await updateHistory(viewingRecord.value.id, {
+      title: newTitle
+    })
+    
+    if (res.success) {
+      // 同时更新列表中的数据显示
+      const recordInList = records.value.find(r => r.id === viewingRecord.value.id)
+      if (recordInList) {
+        recordInList.title = newTitle
+      }
+      console.log('标题更新成功')
+    } else {
+      throw new Error(res.error || '更新失败')
+    }
+  } catch (e) {
+    console.error('更新标题失败:', e)
+    // 恢复旧标题
+    viewingRecord.value.title = oldTitle
+    alert('更新标题失败: ' + String(e))
   }
 }
 

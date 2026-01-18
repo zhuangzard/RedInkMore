@@ -123,6 +123,12 @@ class HistoryService:
                 "task_id": task_id,
                 "generated": []  # 初始无生成图片
             },
+            "content": {  # 新增：生成的文案数据
+                "titles": [],
+                "copywriting": "",
+                "tags": [],
+                "status": "idle"
+            },
             "status": RecordStatus.DRAFT,  # 初始状态：草稿
             "thumbnail": None  # 初始无缩略图
         }
@@ -198,7 +204,9 @@ class HistoryService:
         outline: Optional[Dict] = None,
         images: Optional[Dict] = None,
         status: Optional[str] = None,
-        thumbnail: Optional[str] = None
+        thumbnail: Optional[str] = None,
+        title: Optional[str] = None,
+        content: Optional[Dict] = None
     ) -> bool:
         """
         更新历史记录
@@ -212,6 +220,7 @@ class HistoryService:
             images: 图片信息（可选，包含 task_id 和 generated 列表）
             status: 状态（可选）
             thumbnail: 缩略图文件名（可选）
+            title: 标题（可选）
 
         Returns:
             bool: 更新是否成功，记录不存在时返回 False
@@ -249,6 +258,14 @@ class HistoryService:
         if thumbnail is not None:
             record["thumbnail"] = thumbnail
 
+        # 更新标题
+        if title is not None:
+            record["title"] = title
+            
+        # 更新文案内容
+        if content is not None:
+            record["content"] = content
+
         # 保存完整记录
         record_path = self._get_record_path(record_id)
         with open(record_path, "w", encoding="utf-8") as f:
@@ -267,6 +284,10 @@ class HistoryService:
                 # 更新缩略图
                 if thumbnail:
                     idx_record["thumbnail"] = thumbnail
+
+                # 更新标题
+                if title:
+                    idx_record["title"] = title
 
                 # 更新页数（如果大纲被修改）
                 if outline:
@@ -461,14 +482,19 @@ class HistoryService:
                 if filename.endswith('.png') or filename.endswith('.jpg') or filename.endswith('.jpeg'):
                     image_files.append(filename)
 
-            # 按文件名排序（数字排序）
-            def get_index(filename):
+            # 按文件名排序（数字排序，处理版本号如 0_v1.png）
+            def get_page_index(filename):
                 try:
-                    return int(filename.split('.')[0])
+                    # 提取文件名主体部分 (如 "0" 或 "0_v1")
+                    name_part = filename.split('.')[0]
+                    # 如果有版本号，提取基础索引
+                    if '_' in name_part:
+                        name_part = name_part.split('_')[0]
+                    return int(name_part)
                 except:
                     return 999
 
-            image_files.sort(key=get_index)
+            image_files.sort(key=get_page_index)
 
             # 查找关联的历史记录
             index = self._load_index()
@@ -596,6 +622,94 @@ class HistoryService:
                 "success": False,
                 "error": f"扫描所有任务失败: {str(e)}"
             }
+
+
+    def export_markdown(self, record_id: str) -> Dict[str, Any]:
+        """
+        导出记录为 Markdown 格式
+
+        Args:
+            record_id: 记录 ID
+
+        Returns:
+            Dict[str, Any]: 导出结果
+        """
+        record_res = self.get_record(record_id)
+        if not record_res["success"]:
+            return record_res
+
+        record = record_res["record"]
+        title = record.get("title", "未命名笔记")
+        outline = record.get("outline", {})
+        pages = outline.get("pages", [])
+        images_data = record.get("images", {})
+        task_id = images_data.get("task_id")
+        generated = images_data.get("generated", [])
+        content = record.get("content") or {}
+
+        md = []
+        md.append(f"# {title}")
+        md.append(f"\n> **创建时间**: {record.get('created_at')}")
+        md.append(f"> **状态**: {record.get('status')}")
+        md.append("\n---")
+
+        md.append("\n## 小红书发布文案")
+        
+        # 备选标题
+        titles = content.get("titles", [])
+        if titles:
+            md.append("\n### 备选标题")
+            for i, t in enumerate(titles):
+                md.append(f"{i+1}. {t}")
+        elif title:
+            md.append(f"\n### 标题\n{title}")
+
+        # 文案正文
+        copywriting = content.get("copywriting")
+        if copywriting:
+            md.append("\n### 正文内容")
+            md.append(copywriting)
+        
+        # 标签
+        tags = content.get("tags", [])
+        if tags:
+            md.append("\n### 话题标签")
+            md.append(" ".join([f"#{tag}" for tag in tags]))
+
+        md.append("\n---")
+        md.append("\n## 生成图片列表")
+
+        # 图片列表
+        if task_id and generated:
+            for i, filename in enumerate(generated):
+                # 提取页面索引
+                try:
+                    page_idx = int(filename.split('_')[0].split('.')[0])
+                    page_text = pages[page_idx].get("content", "") if page_idx < len(pages) else ""
+                except:
+                    page_idx = i
+                    page_text = ""
+
+                md.append(f"\n### 第 {page_idx + 1} 页")
+                if page_text:
+                    md.append(f"\n> **页面提示**: {page_text}")
+                
+                # 图片链接 (使用服务端 API 地址)
+                image_url = f"/api/images/{task_id}/{filename}"
+                md.append(f"\n![第 {page_idx + 1} 页图片]({image_url})")
+        else:
+            md.append("\n(暂无生成的图片)")
+
+        if outline.get("raw"):
+            md.append("\n---")
+            md.append("\n## 原始大纲文本")
+            md.append(f"\n```text\n{outline.get('raw')}\n```")
+
+        return {
+            "success": True,
+            "markdown": "\n".join(md),
+            "filename": f"{title}.md"
+        }
 
 
 _service_instance = None

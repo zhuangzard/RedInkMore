@@ -25,6 +25,7 @@ export interface GeneratedImage {
   status: 'generating' | 'done' | 'error' | 'retrying'  // 生成状态
   error?: string      // 错误信息
   retryable?: boolean // 是否可以重试
+  versions?: string[] // 图片的版本列表 (URL数组)
 }
 
 /**
@@ -236,7 +237,8 @@ export const useGeneratorStore = defineStore('generator', {
       const newPage: Page = {
         index: this.outline.pages.length,
         type,
-        content
+        content,
+        use_logo: false
       }
       this.outline.pages.push(newPage)
       // 同步更新 raw 文本
@@ -253,7 +255,8 @@ export const useGeneratorStore = defineStore('generator', {
       const newPage: Page = {
         index: afterIndex + 1,
         type,
-        content
+        content,
+        use_logo: false
       }
       this.outline.pages.splice(afterIndex + 1, 0, newPage)
       // 重新索引所有页面
@@ -297,7 +300,8 @@ export const useGeneratorStore = defineStore('generator', {
       this.images = this.outline.pages.map(page => ({
         index: page.index,
         url: '',
-        status: 'generating'
+        status: 'generating',
+        versions: []
       }))
     },
 
@@ -329,11 +333,21 @@ export const useGeneratorStore = defineStore('generator', {
     updateImage(index: number, newUrl: string) {
       const image = this.images.find(img => img.index === index)
       if (image) {
-        // 添加时间戳避免缓存
+        // 添加时间戳避免缓存 (如果是新生成或编辑)
         const timestamp = Date.now()
-        image.url = `${newUrl}?t=${timestamp}`
+        const finalUrl = `${newUrl}${newUrl.includes('?') ? '&' : '?'}t=${timestamp}`
+
+        image.url = finalUrl
         image.status = 'done'
         delete image.error
+
+        // 管理版本列表
+        if (!image.versions) image.versions = []
+        // 如果当前 URL 不在版本列表中，添加它
+        // 注意：这里我们存的是原始 URL (带时间戳的也行，或者去时间戳)
+        if (!image.versions.includes(finalUrl)) {
+          image.versions.push(finalUrl)
+        }
       }
     },
 

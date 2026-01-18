@@ -6,6 +6,9 @@
         <p class="page-subtitle">恭喜！你的小红书图文已生成完毕，共 {{ store.images.length }} 张</p>
       </div>
       <div style="display: flex; gap: 12px;">
+        <button class="btn" @click="handleExportMarkdown" style="background: white; border: 1px solid var(--border-color);">
+          导出 Markdown
+        </button>
         <button class="btn" @click="startOver" style="background: white; border: 1px solid var(--border-color);">
           再来一篇
         </button>
@@ -91,7 +94,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useGeneratorStore } from '../stores/generator'
-import { regenerateImage } from '../api'
+import { regenerateImage, exportMarkdown } from '../api'
 import ContentDisplay from '../components/result/ContentDisplay.vue'
 
 const router = useRouter()
@@ -135,6 +138,14 @@ const downloadAll = () => {
         }, index * 300)
       }
     })
+  }
+}
+
+const handleExportMarkdown = async () => {
+  if (store.recordId) {
+    await exportMarkdown(store.recordId)
+  } else {
+    alert('暂无可导出的记录')
   }
 }
 

@@ -205,7 +205,11 @@ export async function getActiveBrand(): Promise<{
 /**
  * 上传Logo
  */
-export async function uploadLogo(brandId: string, file: File): Promise<{
+export async function uploadLogo(
+  brandId: string,
+  file: File,
+  description?: string
+): Promise<{
   success: boolean
   logo?: {
     id: string
@@ -221,6 +225,7 @@ export async function uploadLogo(brandId: string, file: File): Promise<{
   try {
     const formData = new FormData()
     formData.append('logo', file)
+    if (description) formData.append('description', description)
 
     const response = await axios.post(
       `${API_BASE_URL}/brands/${brandId}/logo`,
@@ -245,6 +250,21 @@ export async function deleteLogo(brandId: string): Promise<{
 }> {
   try {
     const response = await axios.delete(`${API_BASE_URL}/brands/${brandId}/logo`, { timeout: 10000 })
+    return response.data
+  } catch (error: any) {
+    return handleError(error, '删除Logo失败')
+  }
+}
+
+/**
+ * 删除指定Logo
+ */
+export async function deleteLogoById(brandId: string, logoId: string): Promise<{
+  success: boolean
+  error?: string
+}> {
+  try {
+    const response = await axios.delete(`${API_BASE_URL}/brands/${brandId}/logos/${logoId}`, { timeout: 10000 })
     return response.data
   } catch (error: any) {
     return handleError(error, '删除Logo失败')
