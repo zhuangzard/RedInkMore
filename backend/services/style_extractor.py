@@ -108,28 +108,42 @@ class StyleExtractorService:
 
     def _parse_json_response(self, text: str) -> Optional[Dict]:
         """从响应文本中提取JSON"""
+        if not text or not text.strip():
+            return None
+
+        # 清理常见的格式问题
+        cleaned_text = text.strip()
+
         # 尝试直接解析
         try:
-            return json.loads(text)
+            return json.loads(cleaned_text)
         except json.JSONDecodeError:
             pass
 
         # 尝试从markdown代码块中提取
-        json_match = re.search(r'```(?:json)?\s*\n?([\s\S]*?)\n?```', text)
+        json_match = re.search(r'```(?:json)?\s*\n?([\s\S]*?)\n?```', cleaned_text)
         if json_match:
             try:
-                return json.loads(json_match.group(1))
+                json_content = json_match.group(1).strip()
+                return json.loads(json_content)
             except json.JSONDecodeError:
                 pass
 
         # 尝试找到第一个{到最后一个}
-        start = text.find('{')
-        end = text.rfind('}')
+        start = cleaned_text.find('{')
+        end = cleaned_text.rfind('}')
         if start != -1 and end != -1 and end > start:
+            json_str = cleaned_text[start:end + 1]
             try:
-                return json.loads(text[start:end + 1])
+                return json.loads(json_str)
             except json.JSONDecodeError:
-                pass
+                # 尝试修复常见的 JSON 格式问题
+                try:
+                    # 移除可能的尾随逗号
+                    fixed_json = re.sub(r',(\s*[}\]])', r'\1', json_str)
+                    return json.loads(fixed_json)
+                except json.JSONDecodeError:
+                    pass
 
         return None
 
@@ -224,6 +238,9 @@ class StyleExtractorService:
             elif "rate" in error_msg.lower() or "429" in error_msg:
                 error_type = "rate_limit"
                 error_msg = "API 配额限制\n\nAPI 调用次数超限，请稍后重试。"
+            elif "json" in error_msg.lower() or "decode" in error_msg.lower() or '"tone"' in error_msg:
+                error_type = "parse_error"
+                error_msg = "AI 返回格式异常\n\n模型返回的内容无法解析，请重试。如果问题持续存在，可能需要更换模型。"
 
             return {
                 "success": False,
@@ -253,7 +270,7 @@ class StyleExtractorService:
             return None
 
         content_samples = "\n\n---\n\n".join(samples)
-        prompt = self.writing_prompt_template.format(content_samples=content_samples)
+        prompt = self.writing_prompt_template.replace("{content_samples}", content_samples)
 
         try:
             params = self._get_model_params()
@@ -269,15 +286,17 @@ class StyleExtractorService:
             if writing_style:
                 return writing_style
             else:
-                logger.warning("无法解析文风分析结果")
+                logger.warning(f"无法解析文风分析结果，原始响应: {response[:500]}")
+                # 尝试从文本中提取关键信息
                 return {
-                    "summary": response[:500],
+                    "summary": response[:500] if response else "AI 未返回有效内容",
                     "parse_failed": True
                 }
 
         except Exception as e:
             logger.error(f"文风分析失败: {e}")
-            return None
+            # 抛出异常而不是返回 None，让上层处理
+            raise
 
     def _analyze_visual_style(
         self,
@@ -338,14 +357,15 @@ class StyleExtractorService:
             if visual_style:
                 return visual_style
             else:
-                logger.warning("无法解析视觉风格分析结果")
+                logger.warning(f"无法解析视觉风格分析结果，原始响应: {response[:500]}")
                 return {
-                    "summary": response[:500],
+                    "summary": response[:500] if response else "AI 未返回有效内容",
                     "parse_failed": True
                 }
 
         except Exception as e:
             logger.error(f"视觉风格分析失败: {e}")
+            # 视觉风格分析失败不阻止整体流程，返回 None
             return None
 
     def _generate_style_prompt(

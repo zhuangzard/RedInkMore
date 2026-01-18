@@ -108,19 +108,15 @@ class BrandService:
             "name": name,
             "created_at": now,
             "updated_at": now,
-            "logo": {
-                "file_path": None,
-                "colors": [],
-                "description": None
-            },
-            "style_dna": {
-                "writing_style": None,
-                "visual_style": None,
-                "style_prompt": None
-            },
-            "company_contents": [],
-            "competitor_contents": []
-        }
+                "logos": [],
+                "style_dna": {
+                    "writing_style": None,
+                    "visual_style": None,
+                    "style_prompt": None
+                },
+                "company_contents": [],
+                "competitor_contents": []
+            }
 
         config["brands"][brand_id] = brand_data
 
@@ -233,16 +229,19 @@ class BrandService:
         """
         config = self._load_config()
 
-        if brand_id not in config.get("brands", {}):
-            return {"success": False, "error": "品牌不存在"}
+        if "logos" not in config["brands"][brand_id]:
+             config["brands"][brand_id]["logos"] = []
 
         # 确保目录存在
         self._ensure_brand_dirs(brand_id)
         brand_dir = self._get_brand_dir(brand_id)
 
+        # 生成Logo ID
+        logo_id = f"logo_{uuid.uuid4().hex[:8]}"
+
         # 确定文件扩展名
         ext = os.path.splitext(filename)[1].lower() or ".png"
-        logo_filename = f"logo{ext}"
+        logo_filename = f"{logo_id}{ext}"
         logo_path = os.path.join(brand_dir, logo_filename)
 
         # 保存Logo
@@ -252,27 +251,60 @@ class BrandService:
         # 提取颜色
         colors = self._extract_colors(image_data)
 
-        # 更新配置
+        # 创建Logo记录
         relative_path = f"brand_assets/{brand_id}/{logo_filename}"
-        config["brands"][brand_id]["logo"]["file_path"] = relative_path
-        config["brands"][brand_id]["logo"]["colors"] = colors
+        logo_data = {
+            "id": logo_id,
+            "file_path": relative_path,
+            "colors": colors,
+            "description": None,
+            "created_at": datetime.now().isoformat()
+        }
+
+        # 更新配置
+        config["brands"][brand_id]["logos"].append(logo_data)
+        
+        # 兼容旧字段 (用于显示主Logo)
+        config["brands"][brand_id]["logo"] = logo_data
+        
         config["brands"][brand_id]["updated_at"] = datetime.now().isoformat()
         self._save_config(config)
 
         return {
             "success": True,
-            "logo_path": relative_path,
-            "colors": colors
+            "logo": logo_data
         }
 
-    def delete_logo(self, brand_id: str) -> Dict:
+    def delete_logo(self, brand_id: str, logo_id: str = None) -> Dict:
         """删除Logo"""
         config = self._load_config()
 
         if brand_id not in config.get("brands", {}):
             return {"success": False, "error": "品牌不存在"}
+            
+        brand_data = config["brands"][brand_id]
+        if "logos" not in brand_data:
+            brand_data["logos"] = []
+            
+        # 如果未指定logo_id，尝试删除旧格式的logo或列表中的第一个
+        target_logo = None
+        target_index = -1
+        
+        if logo_id:
+            for i, logo in enumerate(brand_data["logos"]):
+                if logo.get("id") == logo_id:
+                    target_logo = logo
+                    target_index = i
+                    break
+        else:
+            # 兼容旧逻辑：删除主要Logo
+            if brand_data.get("logo", {}).get("file_path"):
+                target_logo = brand_data["logo"]
 
-        logo_path = config["brands"][brand_id].get("logo", {}).get("file_path")
+        if not target_logo:
+             return {"success": False, "error": "Logo不存在"}
+
+        logo_path = target_logo.get("file_path")
 
         if logo_path:
             # 删除文件
@@ -280,12 +312,21 @@ class BrandService:
             if os.path.exists(full_path):
                 os.remove(full_path)
 
-        # 清空Logo配置
-        config["brands"][brand_id]["logo"] = {
-            "file_path": None,
-            "colors": [],
-            "description": None
-        }
+        # 从列表中移除
+        if target_index >= 0:
+            brand_data["logos"].pop(target_index)
+            
+        # 如果删除的是主logo，尝试将主logo指向列表中的下一个，或者清空
+        if brand_data.get("logo", {}).get("id") == target_logo.get("id") or (not logo_id and brand_data.get("logo")):
+             if brand_data["logos"]:
+                 brand_data["logo"] = brand_data["logos"][0]
+             else:
+                 brand_data["logo"] = {
+                    "file_path": None,
+                    "colors": [],
+                    "description": None
+                }
+
         config["brands"][brand_id]["updated_at"] = datetime.now().isoformat()
         self._save_config(config)
 
@@ -380,6 +421,7 @@ class BrandService:
         title: str,
         text: str,
         images: List[bytes] = None,
+        image_urls: List[str] = None,
         source_url: str = None,
         source_type: str = "manual"  # "link" 或 "manual"
     ) -> Dict:
@@ -425,6 +467,26 @@ class BrandService:
                 with open(img_path, "wb") as f:
                     f.write(img_data)
                 image_paths.append(f"brand_assets/{brand_id}/{content_dir_name}/{img_filename}")
+        
+        # 下载并保存网络图片
+        import requests
+        if image_urls:
+            current_idx = len(image_paths)
+            for i, url in enumerate(image_urls):
+                try:
+                    # 跳过已经是本地路径的（如果有）
+                    if not url.startswith('http'):
+                        continue
+                        
+                    response = requests.get(url, timeout=10)
+                    if response.status_code == 200:
+                        img_filename = f"{content_id}_{current_idx + i}_dl.jpg"
+                        img_path = os.path.join(content_dir, img_filename)
+                        with open(img_path, "wb") as f:
+                            f.write(response.content)
+                        image_paths.append(f"brand_assets/{brand_id}/{content_dir_name}/{img_filename}")
+                except Exception as e:
+                    print(f"下载图片失败 {url}: {e}")
 
         # 创建内容记录
         content_data = {
@@ -547,14 +609,24 @@ class BrandService:
         style_dna = active_brand.get("style_dna", {})
         return style_dna.get("style_prompt")
 
-    def get_logo_path(self, brand_id: str) -> Optional[str]:
+    def get_logo_path(self, brand_id: str, logo_id: str = None) -> Optional[str]:
         """获取Logo文件的完整路径"""
         config = self._load_config()
 
         if brand_id not in config.get("brands", {}):
             return None
-
-        logo_path = config["brands"][brand_id].get("logo", {}).get("file_path")
+            
+        brand_data = config["brands"][brand_id]
+        logo_path = None
+        
+        if logo_id and "logos" in brand_data:
+            for logo in brand_data["logos"]:
+                if logo.get("id") == logo_id:
+                    logo_path = logo.get("file_path")
+                    break
+        else:
+            # 默认取主Logo
+            logo_path = brand_data.get("logo", {}).get("file_path")
 
         if logo_path:
             return os.path.join(self.root_dir, logo_path)

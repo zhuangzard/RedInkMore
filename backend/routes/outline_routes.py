@@ -57,7 +57,53 @@ def create_outline_blueprint():
             # 调用大纲生成服务
             logger.info(f"🔄 开始生成大纲，主题: {topic[:50]}...")
             outline_service = get_outline_service()
-            result = outline_service.generate_outline(topic, images if images else None)
+            
+            # 检查 topic 是否为 URL (微信公众号链接)
+            import re
+            is_url = re.match(r'^https?://', topic.strip())
+            
+            if is_url:
+                logger.info(f"检测到 URL 输入，尝试解析内容: {topic}")
+                from backend.services.content_parser import get_content_parser_service
+                
+                parser = get_content_parser_service()
+                parse_result = parser.parse_url(topic.strip())
+                
+                if parse_result['success']:
+                    article_data = parse_result['data']
+                    logger.info(f"URL 解析成功: {article_data.get('title')}")
+                    
+                    # 下载该文章的图片作为参考图
+                    # 如果用户没有上传图片，才使用文章图片
+                    if not images and article_data.get('images'):
+                        import requests
+                        from concurrent.futures import ThreadPoolExecutor
+                        
+                        logger.info(f"下载文章图片作为参考: {len(article_data['images'])} 张")
+                        
+                        def download_img(url):
+                            try:
+                                r = requests.get(url, timeout=10)
+                                if r.status_code == 200:
+                                    return r.content
+                            except:
+                                return None
+                                
+                        with ThreadPoolExecutor(max_workers=5) as executor:
+                            downloaded = list(executor.map(download_img, article_data['images']))
+                            images = [img for img in downloaded if img]
+                            
+                        logger.info(f"成功下载参考图片: {len(images)} 张")
+                    
+                    # 使用改写模式生成大纲
+                    result = outline_service.generate_outline_from_article(article_data, images)
+                else:
+                    logger.warning(f"URL 解析失败: {parse_result.get('error')}, 降级为普通生成")
+                    # 解析失败，把 URL 当作普通文本处理（或者提示用户）
+                    result = outline_service.generate_outline(topic, images if images else None)
+            else:
+                # 普通文本/图片生成模式
+                result = outline_service.generate_outline(topic, images if images else None)
 
             # 记录结果
             elapsed = time.time() - start_time

@@ -142,11 +142,17 @@ class TextChatClient:
 
         payload = {
             "model": model,
-            "messages": messages,
             "temperature": temperature,
-            "max_tokens": max_output_tokens,
             "stream": False
         }
+
+        # 适配 /v1/responses 端点 (参数名为 input, max_output_tokens)
+        if '/responses' in self.chat_endpoint:
+            payload["input"] = messages
+            payload["max_output_tokens"] = max_output_tokens
+        else:
+            payload["messages"] = messages
+            payload["max_tokens"] = max_output_tokens
 
         headers = {
             "Content-Type": "application/json",
@@ -160,6 +166,18 @@ class TextChatClient:
             headers=headers,
             timeout=300  # 5分钟超时
         )
+
+        # 处理 max_tokens 参数错误 (部分新模型如 o1/o3 要求使用 max_completion_tokens)
+        if response.status_code == 400 and "max_token" in response.text:
+            print(f"[警告] 模型 {model} 不支持 max_tokens 参数，尝试使用 max_completion_tokens 重试...")
+            if "max_tokens" in payload:
+                payload["max_completion_tokens"] = payload.pop("max_tokens")
+                response = requests.post(
+                    self.chat_endpoint,
+                    json=payload,
+                    headers=headers,
+                    timeout=300
+                )
 
         if response.status_code != 200:
             error_detail = response.text[:500]
@@ -232,11 +250,61 @@ class TextChatClient:
                     "3. 检查模型名称是否正确"
                 )
 
-        result = response.json()
+        try:
+            result = response.json()
+        except Exception as e:
+            # API 返回非 JSON 格式
+            raise Exception(
+                f"API 返回格式异常\n\n"
+                f"【原始响应】\n{response.text[:300]}\n\n"
+                "【可能原因】\n"
+                "1. API 返回了非 JSON 格式的响应\n"
+                "2. API 服务暂时不可用\n"
+                "3. 网络问题导致响应被截断\n\n"
+                "【建议】稍后重试，或检查 API 服务状态"
+            )
+
+        # 调试：打印响应结构（可在生产环境移除）
+        print(f"[DEBUG] API Response keys: {list(result.keys())}")
+        if "output" in result:
+            print(f"[DEBUG] Output structure: {str(result['output'])[:500]}")
 
         # 提取生成的文本
         if "choices" in result and len(result["choices"]) > 0:
             return result["choices"][0]["message"]["content"]
+        elif "output" in result and len(result["output"]) > 0:
+            # 适配 /v1/responses 响应格式
+            texts = []
+            for item in result["output"]:
+                if isinstance(item, dict):
+                    # 类型为 message 的输出
+                    if item.get("type") == "message" and "content" in item:
+                        content = item["content"]
+                        if isinstance(content, list):
+                            for c in content:
+                                if isinstance(c, dict) and c.get("type") in ["text", "output_text"]:
+                                    texts.append(c.get("text", ""))
+                        elif isinstance(content, str):
+                            texts.append(content)
+                    # 直接的文本内容
+                    elif "text" in item:
+                        texts.append(item["text"])
+                    elif "content" in item:
+                        content = item["content"]
+                        if isinstance(content, str):
+                            texts.append(content)
+                        elif isinstance(content, list):
+                            for c in content:
+                                if isinstance(c, dict) and "text" in c:
+                                    texts.append(c["text"])
+                elif isinstance(item, str):
+                    texts.append(item)
+
+            if texts:
+                return "".join(texts)
+
+            # 如果无法识别结构
+            raise Exception(f"无法识别的 output 结构: {str(result['output'])[:300]}")
         else:
             raise Exception(
                 f"Text API 响应格式异常：未找到生成的文本。\n"

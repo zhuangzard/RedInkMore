@@ -232,8 +232,17 @@ export const useBrandStore = defineStore('brand', {
         if (result.success) {
           // 更新当前品牌的Logo信息
           if (this.currentBrand) {
-            this.currentBrand.logo.file_path = result.logo_path || null
-            this.currentBrand.logo.colors = result.colors || []
+            // 兼容单个Logo字段
+            this.currentBrand.logo.file_path = result.logo_path || result.logo?.file_path || null
+            this.currentBrand.logo.colors = result.colors || result.logo?.colors || []
+
+            // 添加到logos列表
+            if (result.logo) {
+              if (!this.currentBrand.logos) {
+                this.currentBrand.logos = []
+              }
+              this.currentBrand.logos.push(result.logo)
+            }
           }
           return true
         } else {
@@ -289,6 +298,7 @@ export const useBrandStore = defineStore('brand', {
       title: string,
       text: string,
       images?: File[],
+      imageUrls?: string[],
       sourceUrl?: string,
       sourceType: 'link' | 'manual' = 'manual'
     ): Promise<boolean> {
@@ -306,6 +316,7 @@ export const useBrandStore = defineStore('brand', {
           title,
           text,
           images,
+          imageUrls,
           sourceUrl,
           sourceType
         )
@@ -368,6 +379,7 @@ export const useBrandStore = defineStore('brand', {
       title: string,
       text: string,
       images?: File[],
+      imageUrls?: string[],
       sourceUrl?: string,
       sourceType: 'link' | 'manual' = 'manual'
     ): Promise<boolean> {
@@ -385,6 +397,7 @@ export const useBrandStore = defineStore('brand', {
           title,
           text,
           images,
+          imageUrls,
           sourceUrl,
           sourceType
         )

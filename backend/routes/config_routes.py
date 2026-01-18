@@ -369,9 +369,16 @@ def _test_openai_compatible(config: dict, test_prompt: str) -> dict:
 
     payload = {
         "model": config.get('model') or 'gpt-3.5-turbo',
-        "messages": [{"role": "user", "content": test_prompt}],
-        "max_tokens": 50
     }
+
+    # 适配 /v1/responses 端点
+    messages = [{"role": "user", "content": test_prompt}]
+    if '/responses' in url:
+        payload["input"] = messages
+        payload["max_output_tokens"] = 50
+    else:
+        payload["messages"] = messages
+        payload["max_tokens"] = 50
 
     response = requests.post(
         url,
@@ -383,11 +390,49 @@ def _test_openai_compatible(config: dict, test_prompt: str) -> dict:
         timeout=30
     )
 
+    # 处理 max_tokens 参数错误 (部分新模型如 o1/o3 要求使用 max_completion_tokens)
+    if response.status_code == 400 and "max_token" in response.text:
+        if "max_tokens" in payload:
+            payload["max_completion_tokens"] = payload.pop("max_tokens")
+            response = requests.post(
+                url,
+                headers={
+                    'Authorization': f"Bearer {config['api_key']}",
+                    'Content-Type': 'application/json'
+                },
+                json=payload,
+                timeout=30
+            )
+
     if response.status_code != 200:
         raise Exception(f"HTTP {response.status_code}: {response.text[:200]}")
 
     result = response.json()
-    result_text = result['choices'][0]['message']['content']
+    result_text = ""
+
+    if 'choices' in result and len(result['choices']) > 0:
+        result_text = result['choices'][0]['message']['content']
+    elif 'output' in result and len(result['output']) > 0:
+        # 适配 /v1/responses 响应格式
+        first_output = result['output'][0]
+        if isinstance(first_output, dict):
+            if "content" in first_output:
+                content = first_output["content"]
+                if isinstance(content, list):
+                    result_text = "".join([
+                        item.get("text", "") 
+                        for item in content 
+                        if item.get("type") in ["text", "output_text"]
+                    ])
+                else:
+                    result_text = str(content)
+            elif "text" in first_output:
+                result_text = first_output["text"]
+        elif isinstance(first_output, str):
+            result_text = first_output
+
+    if not result_text:
+        raise Exception(f"响应格式异常，未找到文本内容: {str(result)[:200]}")
 
     return _check_response(result_text)
 

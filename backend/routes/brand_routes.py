@@ -167,6 +167,20 @@ def create_brand_blueprint():
         except Exception as e:
             return jsonify({"success": False, "error": str(e)}), 500
 
+    @bp.route('/brands/<brand_id>/logos/<logo_id>', methods=['DELETE'])
+    def delete_logo_by_id(brand_id, logo_id):
+        """删除指定Logo"""
+        try:
+            service = get_brand_service()
+            result = service.delete_logo(brand_id, logo_id)
+
+            if not result.get("success"):
+                return jsonify(result), 404
+
+            return jsonify(result)
+        except Exception as e:
+            return jsonify({"success": False, "error": str(e)}), 500
+
     @bp.route('/brands/<brand_id>/logo', methods=['DELETE'])
     def delete_logo(brand_id):
         """删除Logo"""
@@ -185,8 +199,9 @@ def create_brand_blueprint():
     def get_logo(brand_id):
         """获取Logo图片"""
         try:
+            logo_id = request.args.get('logo_id')
             service = get_brand_service()
-            logo_path = service.get_logo_path(brand_id)
+            logo_path = service.get_logo_path(brand_id, logo_id)
 
             if logo_path is None or not os.path.exists(logo_path):
                 return jsonify({"success": False, "error": "Logo不存在"}), 404
@@ -247,6 +262,8 @@ def create_brand_blueprint():
                 if 'images' in request.files:
                     for file in request.files.getlist('images'):
                         images.append(file.read())
+                
+                image_urls = request.form.getlist('image_urls')
             else:
                 data = request.get_json()
                 title = data.get('title', '')
@@ -262,6 +279,8 @@ def create_brand_blueprint():
                         images.append(base64.b64decode(base64_data))
                     else:
                         images.append(base64.b64decode(img_data))
+                
+                image_urls = data.get('image_urls', [])
 
             service = get_brand_service()
             result = service.add_content(
@@ -270,6 +289,7 @@ def create_brand_blueprint():
                 title,
                 text,
                 images=images if images else None,
+                image_urls=image_urls if image_urls else None,
                 source_url=source_url,
                 source_type=source_type
             )
@@ -326,6 +346,8 @@ def create_brand_blueprint():
                 if 'images' in request.files:
                     for file in request.files.getlist('images'):
                         images.append(file.read())
+
+                image_urls = request.form.getlist('image_urls')
             else:
                 data = request.get_json()
                 title = data.get('title', '')
@@ -340,6 +362,8 @@ def create_brand_blueprint():
                         images.append(base64.b64decode(base64_data))
                     else:
                         images.append(base64.b64decode(img_data))
+                
+                image_urls = data.get('image_urls', [])
 
             service = get_brand_service()
             result = service.add_content(
@@ -348,6 +372,7 @@ def create_brand_blueprint():
                 title,
                 text,
                 images=images if images else None,
+                image_urls=image_urls if image_urls else None,
                 source_url=source_url,
                 source_type=source_type
             )

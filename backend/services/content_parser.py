@@ -20,7 +20,9 @@ class ContentParserService:
         r'xiaohongshu\.com/explore/([a-zA-Z0-9]+)',
         r'xiaohongshu\.com/discovery/item/([a-zA-Z0-9]+)',
         r'xhslink\.com/([a-zA-Z0-9]+)',
+        r'mp\.weixin\.qq\.com/s',
     ]
+
 
     # 请求头
     HEADERS = {
@@ -32,6 +34,97 @@ class ContentParserService:
     def __init__(self):
         """初始化内容解析服务"""
         pass
+
+    def parse_url(self, url: str) -> Dict:
+        """
+        统一解析入口
+        支持小红书和微信公众号链接
+        """
+        # 移除 URL 中的多余空白字符
+        url = url.strip()
+
+        # 1. 判断是否为微信链接
+        if 'mp.weixin.qq.com' in url:
+            return self.parse_wechat_url(url)
+        
+        # 2. 默认为小红书链接（兼容旧逻辑）
+        return self.parse_xiaohongshu_url(url)
+
+    def parse_wechat_url(self, url: str) -> Dict:
+        """
+        解析微信公众号链接
+        """
+        try:
+            print(f"正在解析微信链接: {url}")
+            response = requests.get(url, headers=self.HEADERS, timeout=15)
+            response.raise_for_status()
+            html = response.text
+
+            # 1. 提取标题
+            #var msg_title = '标题';
+            title_match = re.search(r"var\s+msg_title\s*=\s*['\"](.*?)['\"];", html)
+            if not title_match:
+                # 尝试从 og:title 提取
+                title_match = re.search(r'<meta\s+property="og:title"\s+content="([^"]+)"', html)
+            
+            title = title_match.group(1) if title_match else ""
+            # 解码 HTML 实体
+            title = title.replace("&nbsp;", " ").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+
+            # 2. 提取描述/摘要
+            # var msg_desc = "摘要";
+            desc_match = re.search(r"var\s+msg_desc\s*=\s*['\"](.*?)['\"];", html)
+            desc = desc_match.group(1) if desc_match else ""
+
+            # 3. 提取正文文本 (简单提取，去除HTML标签)
+            # 微信正文通常在 id="js_content" 中
+            content_match = re.search(r'<div[^>]*id="js_content"[^>]*>(.*?)</div>\s*<script', html, re.DOTALL)
+            text_content = desc # 默认为摘要
+            if content_match:
+                raw_content = content_match.group(1)
+                # 简单去除标签
+                text = re.sub(r'<[^>]+>', '', raw_content)
+                # 去除多余空白
+                text = re.sub(r'\s+', ' ', text).strip()
+                if len(text) > len(desc):
+                    text_content = text
+
+            # 4. 提取图片
+            # data-src="..."
+            images = []
+            # 查找正文图
+            img_matches = re.findall(r'data-src="([^"]+)"', html)
+            for img_url in img_matches:
+                # 过滤一些非正文图片（如表情包、广告等）
+                if 'mmbiz_png' in img_url or 'mmbiz_jpg' in img_url:
+                    if img_url not in images:
+                        images.append(img_url)
+            
+            # 限制图片数量，取前10张
+            images = images[:10]
+
+            if not title:
+                return {"success": False, "error": "无法解析微信文章标题"}
+
+            return {
+                "success": True,
+                "data": {
+                    "title": title,
+                    "text": text_content,
+                    "desc": desc,
+                    "images": images,
+                    "source_url": url,
+                    "source_type": "wechat"
+                }
+            }
+
+        except Exception as e:
+            print(f"微信解析失败: {e}")
+            return {
+                "success": False,
+                "error": f"微信链接解析失败: {str(e)}",
+                "fallback": "manual"
+            }
 
     def parse_xiaohongshu_url(self, url: str) -> Dict:
         """

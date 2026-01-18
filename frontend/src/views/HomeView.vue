@@ -8,7 +8,7 @@
       <div class="hero-content">
         <div class="brand-pill">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
-          AI 驱动的红墨创作助手
+          AI 驱动的 Redit.io 创作助手
         </div>
         <div class="platform-slogan">
           让传播不再需要门槛，让创作从未如此简单
@@ -30,10 +30,10 @@
     <!-- 版权信息 -->
     <div class="page-footer">
       <div class="footer-tip">
-        配置不成功？访问 <a href="https://redink.top" target="_blank" rel="noopener noreferrer">redink.top</a> 官方站点即刻体验
+        官方网站 <a href="https://redit.io" target="_blank" rel="noopener noreferrer">redit.io</a>
       </div>
       <div class="footer-copyright">
-        © 2025 <a href="https://github.com/HisMax/RedInk" target="_blank" rel="noopener noreferrer">RedInk</a> by 默子 (Histone)
+        © 2025 <a href="https://github.com/zhuangzard/RedInkMore" target="_blank" rel="noopener noreferrer">Redit.io</a> by 太森 (Taisen)
       </div>
       <div class="footer-license">
         Licensed under <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-NC-SA 4.0</a>
@@ -276,11 +276,11 @@ async function handleGenerate() {
   bottom: 32px;
   left: 50%;
   transform: translateX(-50%);
-  background: #FF4D4F;
+  background: #FF4D4F !important;
   color: white;
   padding: 14px 20px;
   border-radius: 16px;
-  box-shadow: 0 8px 24px rgba(255, 77, 79, 0.3);
+  box-shadow: 0 8px 24px rgba(255, 77, 79, 0.4);
   display: flex;
   align-items: flex-start;
   gap: 12px;
@@ -290,7 +290,7 @@ async function handleGenerate() {
 }
 
 .error-toast.config-error {
-  background: linear-gradient(135deg, #FF6B6B 0%, #FF4D4F 100%);
+  background: linear-gradient(135deg, #FF6B6B 0%, #FF4D4F 100%) !important;
 }
 
 .error-toast > svg {

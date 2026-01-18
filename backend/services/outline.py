@@ -2,6 +2,7 @@ import logging
 import os
 import re
 import base64
+import json
 import yaml
 from pathlib import Path
 from typing import Dict, List, Any, Optional
@@ -92,6 +93,19 @@ class OutlineService:
             "prompts",
             "outline_prompt.txt"
         )
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            return f.read()
+
+    def _load_rewrite_prompt_template(self) -> str:
+        prompt_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "prompts",
+            "outline_rewrite_prompt.txt"
+        )
+        if not os.path.exists(prompt_path):
+            # Fallback to default if rewrite prompt missing
+            return self.prompt_template
+            
         with open(prompt_path, "r", encoding="utf-8") as f:
             return f.read()
 
@@ -228,6 +242,102 @@ class OutlineService:
                 "success": False,
                 "error": detailed_error,
                 "error_type": error_type
+            }
+
+    def generate_outline_from_article(
+        self,
+        article_data: Dict,
+        images: Optional[List[bytes]] = None
+    ) -> Dict[str, Any]:
+        """
+        根据文章内容生成大纲（改写模式）
+        
+        Args:
+            article_data: 文章数据 {title, text, ...}
+            images: 图片二进制列表（可选）
+        """
+        try:
+            logger.info(f"开始改写文章: title={article_data.get('title')}, images={len(images) if images else 0}")
+            
+            # 加载改写 Prompt
+            rewrite_prompt = self._load_rewrite_prompt_template()
+            
+            # 构建 Prompt (使用 replace 而不是 format，防止 JSON 中的花括号被错误解析)
+            prompt = rewrite_prompt.replace('{title}', article_data.get('title', '无标题'))
+            prompt = prompt.replace('{content}', article_data.get('text', '')[:3000])
+            prompt = prompt.replace('{image_count}', str(len(images) if images else 0))
+
+            # 从配置中获取模型参数
+            active_provider = self.text_config.get('active_provider', 'google_gemini')
+            providers = self.text_config.get('providers', {})
+            provider_config = providers.get(active_provider, {})
+
+            model = provider_config.get('model', 'gemini-2.0-flash-exp')
+            temperature = provider_config.get('temperature', 0.8) # 改写需要稍微严谨一点，但也需要创意
+            max_output_tokens = provider_config.get('max_output_tokens', 8000)
+
+            logger.info(f"调用改写 API: model={model}")
+            
+            # 这里的 images 主要是为了让模型知道有这些图，未必能直接读懂所有图（取决于模型能力）
+            # 对于 Gemini Pro Vision，传入图片可以帮助它理解上下文
+            outline_text = self.client.generate_text(
+                prompt=prompt,
+                model=model,
+                temperature=temperature,
+                max_output_tokens=max_output_tokens,
+                images=images
+            )
+            
+            # 尝试解析 JSON 格式的返回
+            # 因为 Prompt 要求返回 JSON，所以尝试解析
+            pages = []
+            final_outline = outline_text
+            
+            try:
+                # 尝试找到 JSON 字符串
+                # 使用非贪婪匹配寻找最外层的花括号
+                json_match = re.search(r'\{[\s\S]*\}', outline_text)
+                if json_match:
+                    json_str = json_match.group(0)
+                    # 尝试清理一下常见的Markdown格式标记
+                    if json_str.startswith('```json'):
+                        json_str = json_str[7:]
+                    if json_str.endswith('```'):
+                        json_str = json_str[:-3]
+                    
+                    data = json.loads(json_str)
+                    if 'outline' in data:
+                        final_outline = data['outline']
+                    if 'pages' in data:
+                        pages = data['pages']
+                        # 补全 index
+                        for i, p in enumerate(pages):
+                            p['index'] = i
+            except Exception as e:
+                logger.warning(f"解析改写结果 JSON 失败: {e}，尝试使用普通解析")
+                # 如果 JSON 解析失败，而且 outline_text 本身看起来不像 JSON，那就直接用 text
+                pages = self._parse_outline(outline_text)
+
+            # 如果 JSON 解析失败导致 pages 为空，使用普通解析
+            if not pages:
+                pages = self._parse_outline(outline_text)
+
+            logger.info(f"改写完成，共 {len(pages)} 页")
+
+            return {
+                "success": True,
+                "outline": final_outline,
+                "pages": pages,
+                "has_images": images is not None and len(images) > 0,
+                "source_type": "article_rewrite"
+            }
+
+        except Exception as e:
+            logger.error(f"文章改写失败: {e}")
+            return {
+                "success": False,
+                "error": f"文章改写失败: {str(e)}",
+                "error_type": "generation_error"
             }
 
 

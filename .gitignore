@@ -79,3 +79,5 @@ debug_*.py
 DEV_NOTES.md
 commit_message.txt
 git-changelog.txt
+frontend/text_providers.yaml
+frontend/image_providers.yaml

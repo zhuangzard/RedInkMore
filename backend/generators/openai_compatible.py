@@ -215,11 +215,17 @@ class OpenAICompatibleGenerator(ImageGeneratorBase):
 
         response = requests.post(url, headers=headers, json=payload, timeout=300)
 
+        # 处理 max_tokens 参数错误 (部分新模型如 o1/o3 要求使用 max_completion_tokens)
+        if response.status_code == 400 and "max_token" in response.text:
+            logger.warning(f"模型 {model} 不支持 max_tokens 参数，尝试使用 max_completion_tokens 重试...")
+            if "max_tokens" in payload:
+                payload["max_completion_tokens"] = payload.pop("max_tokens")
+                response = requests.post(url, headers=headers, json=payload, timeout=300)
+
         if response.status_code != 200:
             error_detail = response.text[:500]
             status_code = response.status_code
 
-            # 详细的错误信息
             if status_code == 401:
                 raise Exception(
                     "❌ API Key 认证失败\n\n"

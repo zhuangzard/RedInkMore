@@ -27,10 +27,19 @@ export interface BrandDetail {
   created_at: string
   updated_at: string
   logo: {
+    id?: string
     file_path: string | null
     colors: string[]
     description: string | null
+    created_at?: string
   }
+  logos: Array<{
+    id: string
+    file_path: string
+    colors: string[]
+    description: string | null
+    created_at: string
+  }>
   style_dna: {
     writing_style: WritingStyle | null
     visual_style: VisualStyle | null
@@ -198,6 +207,13 @@ export async function getActiveBrand(): Promise<{
  */
 export async function uploadLogo(brandId: string, file: File): Promise<{
   success: boolean
+  logo?: {
+    id: string
+    file_path: string
+    colors: string[]
+    description: string | null
+    created_at: string
+  }
   logo_path?: string
   colors?: string[]
   error?: string
@@ -287,6 +303,7 @@ export async function addContent(
   title: string,
   text: string,
   images?: File[],
+  imageUrls?: string[],
   sourceUrl?: string,
   sourceType: 'link' | 'manual' = 'manual'
 ): Promise<{
@@ -302,6 +319,11 @@ export async function addContent(
     formData.append('source_type', sourceType)
     if (sourceUrl) {
       formData.append('source_url', sourceUrl)
+    }
+    if (imageUrls && imageUrls.length > 0) {
+      imageUrls.forEach(url => {
+        formData.append('image_urls', url)
+      })
     }
     if (images) {
       images.forEach(file => {
@@ -390,6 +412,7 @@ export async function addCompetitor(
   title: string,
   text: string,
   images?: File[],
+  imageUrls?: string[],
   sourceUrl?: string,
   sourceType: 'link' | 'manual' = 'manual'
 ): Promise<{
@@ -405,6 +428,11 @@ export async function addCompetitor(
     formData.append('source_type', sourceType)
     if (sourceUrl) {
       formData.append('source_url', sourceUrl)
+    }
+    if (imageUrls && imageUrls.length > 0) {
+      imageUrls.forEach(url => {
+        formData.append('image_urls', url)
+      })
     }
     if (images) {
       images.forEach(file => {

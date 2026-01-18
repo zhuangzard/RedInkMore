@@ -3,20 +3,47 @@ brands:
   brand_99e9baf9:
     name: Primary
     created_at: '2026-01-17T21:23:35.090240'
-    updated_at: '2026-01-17T21:37:43.506605'
-    logo:
-      file_path: brand_assets/brand_99e9baf9/logo.png
+    updated_at: '2026-01-18T09:52:47.775767'
+    logo: &id001
+      id: logo_462e20dc
+      file_path: brand_assets/brand_99e9baf9/logo_462e20dc.png
       colors:
       - '#900000'
-      - '#001050'
-      - '#002050'
+      - '#7080A0'
+      - '#101050'
       - '#001040'
-      - '#001030'
+      - '#000020'
       description: null
+      created_at: '2026-01-17T23:09:56.772204'
     style_dna:
-      writing_style: null
+      writing_style:
+        tone: 以专业理性为主、带轻度“种草/榜单”式的兴奋感；整体偏教育咨询口吻，强调信息权威与可操作性，同时穿插第一人称经历增强可信度与亲近感，结尾常用“欢迎咨询/联系我们”做转化。
+        vocabulary:
+        - 榜单/排名/出炉
+        - 卷/太懂了
+        - 顶级/最贵/含金量
+        - STEM/rigor/全球视野
+        - 欢迎咨询/欢迎DD/联系我们
+        keywords:
+        - 私校学费
+        - 西雅图/DMV大华府
+        - 顶级私校/录取Offer
+        - K-12/低龄申请
+        - 阅读课/原版阅读
+        emoji_style: 公司内容几乎不用或极少用emoji，主要用❗️❓制造标题情绪点；竞品内容emoji更频繁，用于氛围装饰与引导互动（如🚇🌲🌹🫰🙋、🔥）。
+        sentence_style: 长句与复合句较多，信息密度高，常用因果解释与背景铺陈；标题和段落中穿插感叹号/问号增强吸引力；正文常用分点/数据罗列（榜单、录取数、课程亮点）与“需要说明的是/我发现/以…为例”等结构。
+        summary: 整体呈现“教育咨询+数据榜单”的内容风格：用排名/数据/案例建立权威，用地域与行业背景做逻辑解释，并以第一人称经历加深信任。表达克制偏专业，但在标题端用强标点与热点词制造点击，结尾固定以咨询引导完成转化。
       visual_style: null
-      style_prompt: null
+      style_prompt: '【品牌风格要求】
+
+        - 品牌主色调: #900000, #7080A0, #101050, #001040, #000020
+
+        - 文字风格: 以专业理性为主、带轻度“种草/榜单”式的兴奋感；整体偏教育咨询口吻，强调信息权威与可操作性，同时穿插第一人称经历增强可信度与亲近感，结尾常用“欢迎咨询/联系我们”做转化。
+
+        - 内容特点: 整体呈现“教育咨询+数据榜单”的内容风格：用排名/数据/案例建立权威，用地域与行业背景做逻辑解释，并以第一人称经历加深信任。表达克制偏专业，但在标题端用强标点与热点词制造点击，结尾固定以咨询引导完成转化。
+
+
+        请确保生成的图片符合以上品牌风格特点，保持视觉统一性。'
     company_contents:
     - id: company_7d22eda5
       type: link
@@ -132,3 +159,37 @@ brands:
       - brand_assets/brand_99e9baf9/competitors/competitor_a46b0e02_2.jpg
       - brand_assets/brand_99e9baf9/competitors/competitor_a46b0e02_3.jpg
       created_at: '2026-01-17T21:37:43.506605'
+    - id: competitor_fa85d5a2
+      type: link
+      source_url: https://www.xiaohongshu.com/explore/67cfeef7000000001201e040?xsec_token=AB9hajngnfXXc-KFtggayPRg5unvdedBNpSiuFgiIRgzg=&xsec_source=pc_user
+      title: 丽格2025届美国初高中申请录取汇总！
+      text: "✨期盼已久的310美高榜单终于揭晓！截止目前为止，共录取128枚寄宿，22枚走读，总计录取数量150枚！\r\n\U0001F4AA持续保持学生录取率100%！90%的学生能录取到校单中第一梯队且满意的学校！\r\
+        \n包括：\r\n\U0001F3EB菲利普斯安多佛Phillips Academy Andover\r\n\U0001F3EB菲利普斯埃克塞特中学Phillips Exeter Academy\r\
+        \n\U0001F3EB霍奇基斯中学Hotchkiss School\r\n\U0001F3EB米德尔塞克斯中学Middlesex School\r\
+        \n\U0001F3EB鲁米斯查菲高中Loomis Chaffee School\r\n\U0001F3EB迪尔菲尔德学院Deerfield Academy\r\
+        \n……\r\n\U0001F389再次恭喜拿到offer的学生和家庭，更多院校录取结果陆续公布，预祝2025届同学都能梦校翠录！\r\n\U0001F496\
+        作为一家以“帮助学生成为更好的自己，坚持教育的长期价值主义”为理念的美国本土专业顾问升学机构，自2008年进入留学行业，丽格教育深耕美初高领域，一直以专业、真诚、务实、靠谱的做事风格回馈信任丽格的家庭和学生，为每一个选择信赖丽格的家庭负责到底，帮这些家庭圆梦心仪的美国学校！\r\
+        \n\uFEFF#美高申请[话题]#\uFEFF     \uFEFF#美高规划[话题]#\uFEFF     \uFEFF#留学美国[话题]#\uFEFF\
+             \uFEFF#美国高中[话题]#\uFEFF     \uFEFF#私立美高[话题]#\uFEFF     \uFEFF#留学规划[话题]#\uFEFF\
+             \uFEFF#andover[话题]#\uFEFF     \uFEFF#Exeter[话题]#\uFEFF     \uFEFF#Hotchkiss[话题]#\uFEFF\
+             \uFEFF#middlesex[话题]#\uFEFF\uFEFF"
+      images:
+      - brand_assets/brand_99e9baf9/competitors/competitor_fa85d5a2_0_dl.jpg
+      - brand_assets/brand_99e9baf9/competitors/competitor_fa85d5a2_1_dl.jpg
+      - brand_assets/brand_99e9baf9/competitors/competitor_fa85d5a2_2_dl.jpg
+      - brand_assets/brand_99e9baf9/competitors/competitor_fa85d5a2_3_dl.jpg
+      - brand_assets/brand_99e9baf9/competitors/competitor_fa85d5a2_4_dl.jpg
+      - brand_assets/brand_99e9baf9/competitors/competitor_fa85d5a2_5_dl.jpg
+      created_at: '2026-01-17T23:11:44.963917'
+    logos:
+    - id: logo_b7fc87bf
+      file_path: brand_assets/brand_99e9baf9/logo_b7fc87bf.png
+      colors:
+      - '#900000'
+      - '#001050'
+      - '#002050'
+      - '#001040'
+      - '#001030'
+      description: null
+      created_at: '2026-01-17T23:09:28.154350'
+    - *id001
